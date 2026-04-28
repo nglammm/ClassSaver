@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ClassSaverConfig>
+    <!-- Markers -->
+    <Markers>
+        <Marker name="StartEnumerable" value="1"/>
+        <Marker name="StartClass" value="2"/>
+        <Marker name="StartSection" value="3"/>
+        <Marker name="EndScope" value="4"/>
+    </Markers>
+
+    <!-- Datatype map -->
+    <TypeMap>
+        <Type name="Boolean" code="5"/>
+        <Type name="Byte" code="6"/>
+        <Type name="SByte" code="7"/>
+        <Type name="Char" code="8"/>
+        <Type name="Int16" code="9"/>
+        <Type name="UInt16" code="10"/>
+        <Type name="Int32" code="11"/>
+        <Type name="UInt32" code="12"/>
+        <Type name="Int64" code="13"/>
+        <Type name="UInt64" code="14"/>
+        <Type name="Single" code="15"/>
+        <Type name="Null" code="16"/>
+        <Type name="Double" code="17"/>
+        <Type name="IntPtr" code="18"/>
+        <Type name="UIntPtr" code="19"/>
+        <Type name="String" code="20"/>
+        <Type name="Decimal" code="21"/>
+        <Type name="ISerializable" code="22"/>
+    </TypeMap>
+</ClassSaverConfig>
