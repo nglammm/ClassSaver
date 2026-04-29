@@ -35,9 +35,6 @@ public class ClassParser
 
     private T ReadSection<T>(ClassSection section, BinaryReader reader)
     {
-        switch (section)
-        {
-            
-        }
+        throw  new NotImplementedException();
     }
 }
