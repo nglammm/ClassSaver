@@ -1,5 +1,5 @@
 # ClassSaver
-Saves/Loads your c# class data with file.
+Saves/Loads your c# class data with data stream
 
 ## to dos:
 - Implement parser
