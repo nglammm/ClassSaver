@@ -2,13 +2,18 @@
 <ClassSaverConfig>
     <!-- Markers -->
     <Markers>
-        <Marker name="StartEnumerable" value="1"/>
-        <Marker name="StartClass" value="2"/>
-        <Marker name="StartSection" value="3"/>
-        <Marker name="EndScope" value="4"/>
+        <Marker name="StartVariable" value="23"/>
+        <Marker name="StartSerializable" value="24"/>
+        <Marker name="StartEnumerable" value="25"/>
+        <Marker name="StartClass" value="26"/>
+        <Marker name="StartSection" value="27"/>
+        <Marker name="EndScope" value="28"/>
     </Markers>
 
-    <!-- Datatype map -->
+    <!-- Datatype map 
+    Note: Type name MUST match the appropriate name for primitive data type.
+    -->
+    
     <TypeMap>
         <Type name="Boolean" code="5"/>
         <Type name="Byte" code="6"/>
@@ -27,6 +32,8 @@
         <Type name="UIntPtr" code="19"/>
         <Type name="String" code="20"/>
         <Type name="Decimal" code="21"/>
+        <!-- Custom user-set serializable data is also considered a primitive data type. -->
         <Type name="ISerializable" code="22"/>
     </TypeMap>
+    
 </ClassSaverConfig>

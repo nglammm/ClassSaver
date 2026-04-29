@@ -6,5 +6,6 @@ namespace ClassSaver;
 public enum ClassSection
 {
     Header = 0,
-    Data = 1,
+    Cache = 1,
+    Data = 2,
 }

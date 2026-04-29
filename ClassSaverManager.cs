@@ -11,7 +11,7 @@ public static class ClassSaverManager
     public const BindingFlags BindingFlagsAll =  BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
     
     #region XML Constants
-    private const string XMLPath = "Config/ClassSaverConfig.xml";
+    private const string XML_Path = "Config/ClassSaverConfig.xml";
     // markers section
     private const string XML_MarkersSectionName = "Markers";
     private const string XML_MarkersName = "name";
@@ -22,37 +22,13 @@ public static class ClassSaverManager
     private const string XML_TypeMapValue = "value";
     #endregion
     
-    // byte constants -- do not change bc it is important, rather add more & expand.
-    public const byte StartEnumerable = 0x01;
-    public const byte StartClass = 0x02;
-    public const byte StartSection = 0x03;
-    public const byte EndScope = 0x04;
-    
-    // byte constants for primitive data types
-    const byte TypeBoolean = 0x11;
-    const byte TypeByte = 0x12;
-    const byte TypeSByte = 0x13;
-    const byte TypeChar = 0x14;
-    const byte TypeInt16 = 0x15;
-    const byte TypeUInt16 = 0x16;
-    const byte TypeInt32 = 0x17;
-    const byte TypeUInt32 = 0x18;
-    const byte TypeInt64 = 0x19;
-    const byte TypeUInt64 = 0x20;
-    const byte TypeSingle = 0x21;
-    const byte TypeNull = 0x22;
-    const byte TypeDouble = 0x23;
-    const byte TypeIntPtr = 0x24;
-    const byte TypeUIntPtr = 0x25;
-    const byte TypeString = 0x26;
-    const byte TypeDecimal = 0x27;
     
     private static readonly Dictionary<string, byte> _markerMap = new();
     private static readonly Dictionary<string, byte> _typeMap = new();
 
     static ClassSaverManager()
     {
-        XDocument doc = XDocument.Load(XMLPath);
+        XDocument doc = XDocument.Load(XML_Path);
         if (doc.Root == null) throw new("Config/ClassSaverConfig.xml not found");
         
         // load data to marker map
@@ -83,13 +59,37 @@ public static class ClassSaverManager
     }
     
     /// <summary>
-    /// Is the type we are dealing with a primitive?
+    /// Is the type we are dealing with a primitive? <b>A type that implements
+    /// ISerializable is also considered a primitive</b>
+    /// <para>
+    /// Refer to the ClassSaverConfig.xml for what is considered a primitive.
+    /// </para>
     /// </summary>
     /// <param name="type">The type to check</param>
     /// <returns>true/false depending on if it's a primitive or not</returns>
     public static bool IsPrimitive(Type type)
     {
-        return type.IsPrimitive || type == typeof(string) || type == typeof(decimal);
+        if (_typeMap.ContainsKey(type.Name)) return true;
+        
+        // find via interface.
+        var interfaces = type.GetInterfaces();
+
+        foreach (var iface in interfaces)
+        {
+            if (_typeMap.ContainsKey(iface.Name)) return true;
+        }
+        
+        return false;
+    }
+    
+    /// <summary>
+    /// Returns the marker byte with given marker name.
+    /// </summary>
+    /// <param name="markerName">The marker name.</param>
+    /// <returns></returns>
+    public static byte GetMarkerByteCode(string markerName)
+    {
+        return _markerMap[markerName];
     }
     
     /// <summary>
@@ -101,39 +101,9 @@ public static class ClassSaverManager
     public static bool GetPrimitiveByteCode(object data, out byte byteCode)
     {
         byteCode = 0;
-        var type = data.GetType();
+        var dataType = data.GetType();
+        var dataTypeName = dataType.Name;
 
-        if (data == null)
-        {
-            byteCode = TypeNull;
-            return true;
-        }
-        
-        if (!IsPrimitive(type)) return false;
-        
-        var typeName = type.Name;
-
-        byteCode = typeName switch
-        {
-            ("Boolean") => TypeBoolean,
-            ("Byte") => TypeByte,
-            ("SByte") => TypeSByte,
-            ("Char") => TypeChar,
-            ("Int16") => TypeInt16,
-            ("UInt16") => TypeUInt16,
-            ("Int32") => TypeInt32,
-            ("UInt32") => TypeUInt32,
-            ("Int64") => TypeInt64,
-            ("UInt64") => TypeUInt64,
-            ("Single") => TypeSingle,
-            ("Double") => TypeDouble,
-            ("IntPtr") => TypeIntPtr,
-            ("UIntPtr") => TypeUIntPtr,
-            ("String") => TypeString,
-            ("Decimal") => TypeDecimal,
-            _ => byteCode
-        };
-
-        return true;
+        return _markerMap.TryGetValue(dataTypeName, out byteCode);
     }
 }
