@@ -9,7 +9,6 @@ namespace ClassSaver;
 public class ClassSerializer
 {
     private CacheMode _cacheMode;
-    private ClassSection _currentSection;
     private Type? _currentSerializingType;
     private object? _currentSerializingObj;
 
@@ -19,7 +18,7 @@ public class ClassSerializer
     /// <param name="desiredObj">The desired object to parse</param>
     /// <param name="dataStream">The file stream to output with</param>
     /// <param name="cacheMode">The cache mode to serialize with</param>
-    public void Serialize<T>(object desiredObj, Stream dataStream, CacheMode cacheMode = CacheMode.None)
+    public void Serialize<T>(object desiredObj, Stream dataStream, CacheMode cacheMode = CacheMode.None) where T : new()
     {
         _cacheMode = cacheMode;
         _currentSerializingType = typeof(T);
@@ -29,11 +28,9 @@ public class ClassSerializer
         
         // write the first header
         WriteSection(ClassSection.Header, writer);
-        _currentSection++;
         
         // write the cache section
         WriteSection(ClassSection.Cache, writer);
-        _currentSection++;
         
         // write the third data section
         WriteSection(ClassSection.Data, writer);
@@ -78,7 +75,7 @@ public class ClassSerializer
         var headerSection = new HeaderSection();
         Serialize(headerSection, headerSection.GetType(), writer);
         
-        writer.Write(ClassSaverManager.GetMarkerByteCode("EndSection"));
+        writer.Write(ClassSaverManager.GetMarkerByteCode("EndScope"));
     }
 
     private void WriteSectionCache(BinaryWriter writer)
@@ -87,13 +84,14 @@ public class ClassSerializer
         writer.Write((int)ClassSection.Cache);
         
         // [TODO] make cache section
-        var cacheSection = new CacheSection(
-            cacheMode: (int)_cacheMode
-        );
+        var cacheSection = new CacheSection()
+        {
+            CacheMode = (int)_cacheMode
+        };
         
         Serialize(cacheSection, cacheSection.GetType(), writer);
         
-        writer.Write(ClassSaverManager.GetMarkerByteCode("EndSection"));
+        writer.Write(ClassSaverManager.GetMarkerByteCode("EndScope"));
     }
 
     private void WriteSectionData(BinaryWriter writer)
@@ -131,10 +129,10 @@ public class ClassSerializer
             return; // quit early
         }
         
-        // is enumerable
-        if (desiredObj is IEnumerable enumerable)
+        // is Collection
+        if (desiredObj is ICollection Collection)
         {
-            WriteEnumerable(objectVarName, enumerable, writer);
+            WriteCollection(objectVarName, desiredObj.GetType(), Collection, writer);
             return;
         }
         
@@ -144,10 +142,11 @@ public class ClassSerializer
 
     private void WriteClass(string varName, object classData, BinaryWriter writer)
     {
-        writer.Write(ClassSaverManager.GetMarkerByteCode("StartClass"));
         writer.Write(varName);
+        writer.Write(ClassSaverManager.GetMarkerByteCode("StartClass"));
         
         var classType = classData.GetType();
+        writer.Write(classType.AssemblyQualifiedName);
 
         // get fields & save
         var fields = classType.GetFields(ClassSaverManager.BindingFlagsAll);
@@ -188,8 +187,8 @@ public class ClassSerializer
     /// <param name="writer">The binary writer</param>
     private void WriteSerializable(string varName, ISerializable value, BinaryWriter writer)
     {
-        writer.Write(ClassSaverManager.GetMarkerByteCode("StartSerializable"));
         writer.Write(varName);
+        writer.Write(ClassSaverManager.GetMarkerByteCode("StartSerializable"));
         
         var toSerialize = value.Serialize();
         Serialize(toSerialize, toSerialize.GetType(), writer);
@@ -214,12 +213,12 @@ public class ClassSerializer
         }
     }
 
-    private void WritePrimitiveNoCache(string varName, object data, BinaryWriter writer)
+    private static void WritePrimitiveNoCache(string varName, object data, BinaryWriter writer)
     {
-        // mark as variable
-        writer.Write(ClassSaverManager.GetMarkerByteCode("StartVariable"));
         // write var name
         writer.Write(varName);
+        // mark as variable
+        writer.Write(ClassSaverManager.GetMarkerByteCode("StartVariable"));
         
         // write data type code
         if (ClassSaverManager.GetPrimitiveByteCode(data, out var varTypeCode)) writer.Write(varTypeCode);
@@ -230,7 +229,7 @@ public class ClassSerializer
         writer.Write(ClassSaverManager.GetMarkerByteCode("EndScope"));
     }
 
-    private void WritePrimitiveData(object data, BinaryWriter writer)
+    private static void WritePrimitiveData(object data, BinaryWriter writer)
     {
         var dataType = data.GetType();
 
@@ -287,20 +286,17 @@ public class ClassSerializer
         }
     }
 
-    private void WriteEnumerable(string varName, IEnumerable data, BinaryWriter writer)
+    private void WriteCollection(string varName, Type dataType, ICollection collection, BinaryWriter writer)
     {
-        writer.Write(ClassSaverManager.GetMarkerByteCode("StartEnumerable"));
         writer.Write(varName);
+        writer.Write(ClassSaverManager.GetMarkerByteCode("StartCollection"));
         
-        // get the enumerable count
-        var objects = data as object[] ?? data.Cast<object>().ToArray();
-        var enumerableCount = data switch {
-            ICollection c => c.Count,
-            not null => objects.Length,
-            _ => 0
-        };  
+        // get the Collection count
+        var objects = collection as object[] ?? collection.Cast<object>().ToArray();
+        var collectionCount = collection.Count;
         
-        writer.Write(enumerableCount);
+        writer.Write(dataType.Name);
+        writer.Write(collectionCount);
         
         // serialize each element
         foreach (var obj in objects)

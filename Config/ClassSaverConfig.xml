@@ -4,7 +4,7 @@
     <Markers>
         <Marker name="StartVariable" value="23"/>
         <Marker name="StartSerializable" value="24"/>
-        <Marker name="StartEnumerable" value="25"/>
+        <Marker name="StartCollection" value="25"/>
         <Marker name="StartClass" value="26"/>
         <Marker name="StartSection" value="27"/>
         <Marker name="EndScope" value="28"/>

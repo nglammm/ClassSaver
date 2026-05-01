@@ -19,7 +19,7 @@ public static class ClassSaverManager
     // type map section
     private const string XML_TypeMapSectionName = "TypeMap";
     private const string XML_TypeMapName = "name";
-    private const string XML_TypeMapValue = "value";
+    private const string XML_TypeMapValue = "code";
     #endregion
     
     
@@ -86,7 +86,7 @@ public static class ClassSaverManager
     /// Returns the marker byte with given marker name.
     /// </summary>
     /// <param name="markerName">The marker name.</param>
-    /// <returns></returns>
+    /// <returns>The marker byte code, will return error instead if not found.</returns>
     public static byte GetMarkerByteCode(string markerName)
     {
         return _markerMap[markerName];
@@ -104,6 +104,6 @@ public static class ClassSaverManager
         var dataType = data.GetType();
         var dataTypeName = dataType.Name;
 
-        return _markerMap.TryGetValue(dataTypeName, out byteCode);
+        return _typeMap.TryGetValue(dataTypeName, out byteCode);
     }
 }
