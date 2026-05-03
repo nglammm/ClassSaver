@@ -1,10 +1,15 @@
 namespace ClassSaver;
 
 /// <summary>
-/// An interface for classes that is serializeable and parseable back and forth so the serializer/parser
-/// won't dig deep into each variable.
 /// <para>
-/// Please make sure the returning object can be converted back
+/// An interface for classes that is serializeable and parseable back and forth so the serializer/parser
+/// won't dig deep into each variable and will return your desired value instead.
+/// </para>
+/// <para>
+/// Please make sure the returning object can be converted back.
+/// </para>
+/// <para>
+/// Attributes are discarded when you use this interface.
 /// </para>
 /// </summary>
 public interface ISerializable

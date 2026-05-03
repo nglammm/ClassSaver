@@ -2,5 +2,5 @@
 Saves/Loads your c# class data with data stream
 
 ## to dos:
-- Implement parser
+- infinite recursion if we self-reference, fix.
 - *future* - implement cache mode "keyword"

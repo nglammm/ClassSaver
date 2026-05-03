@@ -2,12 +2,12 @@
 <ClassSaverConfig>
     <!-- Markers -->
     <Markers>
-        <Marker name="StartVariable" value="23"/>
-        <Marker name="StartSerializable" value="24"/>
-        <Marker name="StartCollection" value="25"/>
-        <Marker name="StartClass" value="26"/>
-        <Marker name="StartSection" value="27"/>
-        <Marker name="EndScope" value="28"/>
+        <Marker name="StartPrimitive" value="23" byteType="StartByte"/>
+        <Marker name="StartSerializable" value="24" byteType="StartByte"/>
+        <Marker name="StartCollection" value="25" byteType="StartByte"/>
+        <Marker name="StartClass" value="26" byteType="StartByte"/>
+        <Marker name="StartSection" value="27" byteType="StartByte"/>
+        <Marker name="EndScope" value="28" byteType="EndByte"/>
     </Markers>
 
     <!-- Datatype map 
@@ -15,25 +15,24 @@
     -->
     
     <TypeMap>
-        <Type name="Boolean" code="5"/>
-        <Type name="Byte" code="6"/>
-        <Type name="SByte" code="7"/>
-        <Type name="Char" code="8"/>
-        <Type name="Int16" code="9"/>
-        <Type name="UInt16" code="10"/>
-        <Type name="Int32" code="11"/>
-        <Type name="UInt32" code="12"/>
-        <Type name="Int64" code="13"/>
-        <Type name="UInt64" code="14"/>
-        <Type name="Single" code="15"/>
-        <Type name="Null" code="16"/>
-        <Type name="Double" code="17"/>
-        <Type name="IntPtr" code="18"/>
-        <Type name="UIntPtr" code="19"/>
-        <Type name="String" code="20"/>
-        <Type name="Decimal" code="21"/>
+        <Type name="Boolean" code="5" type="struct"/>
+        <Type name="Byte" code="6" type="struct"/>
+        <Type name="SByte" code="7" type="struct"/>
+        <Type name="Char" code="8" type="struct"/>
+        <Type name="Int16" code="9" type="struct"/>
+        <Type name="UInt16" code="10" type="struct"/>
+        <Type name="Int32" code="11" type="struct"/>
+        <Type name="UInt32" code="12" type="struct"/>
+        <Type name="Int64" code="13" type="struct"/>
+        <Type name="UInt64" code="14" type="struct"/>
+        <Type name="Single" code="15" type="struct"/>
+        <Type name="Double" code="16" type="struct"/>
+        <Type name="IntPtr" code="17" type="struct"/>
+        <Type name="UIntPtr" code="18" type="struct"/>
+        <Type name="String" code="19" type="class"/>
+        <Type name="Decimal" code="20" type="struct"/>
         <!-- Custom user-set serializable data is also considered a primitive data type. -->
-        <Type name="ISerializable" code="22"/>
+        <Type name="ISerializable" code="21" type="interface"/>
     </TypeMap>
     
 </ClassSaverConfig>

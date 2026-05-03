@@ -44,6 +44,7 @@ public class ClassSerializer
     /// <exception cref="ArgumentOutOfRangeException">Called if there is no such ClassSection or it is not implemented.</exception>
     private void WriteSection(ClassSection section, BinaryWriter writer)
     {
+        // already written the byte code here.
         writer.Write(ClassSaverManager.GetMarkerByteCode("StartSection"));
         writer.Write((int)section);
 
@@ -68,21 +69,13 @@ public class ClassSerializer
     
     private void WriteSectionHeader(BinaryWriter writer)
     {
-        writer.Write(ClassSaverManager.GetMarkerByteCode("StartSection"));
-        writer.Write((int)ClassSection.Header);
-        
         // [TODO] make header section
         var headerSection = new HeaderSection();
         Serialize(headerSection, headerSection.GetType(), writer);
-        
-        writer.Write(ClassSaverManager.GetMarkerByteCode("EndScope"));
     }
 
     private void WriteSectionCache(BinaryWriter writer)
     {
-        writer.Write(ClassSaverManager.GetMarkerByteCode("StartSection"));
-        writer.Write((int)ClassSection.Cache);
-        
         // [TODO] make cache section
         var cacheSection = new CacheSection()
         {
@@ -90,18 +83,22 @@ public class ClassSerializer
         };
         
         Serialize(cacheSection, cacheSection.GetType(), writer);
-        
-        writer.Write(ClassSaverManager.GetMarkerByteCode("EndScope"));
     }
 
     private void WriteSectionData(BinaryWriter writer)
     {
-        writer.Write(ClassSaverManager.GetMarkerByteCode("StartSection"));
-        writer.Write((int)ClassSection.Data);
-        
+        // run the appropriate cache
         Serialize(_currentSerializingObj, _currentSerializingType, writer);
-        
-        writer.Write(ClassSaverManager.GetMarkerByteCode("EndScope"));
+    }
+
+
+    void Serialize(object desiredObj, Type desiredType, BinaryWriter writer)
+    {
+        switch (_cacheMode)
+        {
+            case CacheMode.None: SerializeNoCache(desiredObj, desiredType, writer); break;
+            default: throw new ArgumentOutOfRangeException();
+        }
     }
 
 
@@ -116,7 +113,7 @@ public class ClassSerializer
     ///     </para>
     /// </param>
     /// <param name="writer">The writer object</param>
-    private void Serialize(object desiredObj, Type objectType, BinaryWriter writer, string objectVarName = "")
+    private void SerializeNoCache(object desiredObj, Type objectType, BinaryWriter writer, string objectVarName = "")
     {
         if (string.IsNullOrEmpty(objectVarName)) objectVarName = objectType.Name;
         
@@ -124,26 +121,27 @@ public class ClassSerializer
         if (ClassSaverManager.IsPrimitive(objectType))
         {
             // check for primitive type
-            if (objectType.Name == "ISerializable") WriteSerializable(objectVarName, desiredObj as ISerializable, writer);
-            else WritePrimitive(objectVarName, desiredObj, writer);
-            return; // quit early
+            if (objectType.Name == "ISerializable") WriteSerializableNoCache(objectVarName, objectType, desiredObj as ISerializable, writer);
+            else WritePrimitiveNoCache(objectVarName, desiredObj, writer);
+            return;
         }
         
         // is Collection
         if (desiredObj is ICollection Collection)
         {
-            WriteCollection(objectVarName, desiredObj.GetType(), Collection, writer);
+            WriteCollectionNoCache(objectVarName, desiredObj.GetType(), Collection, writer);
             return;
         }
         
         // is a class
-        WriteClass(objectVarName, desiredObj, writer);
+        WriteClassNoCache(objectVarName, desiredObj, writer);
     }
+    
 
-    private void WriteClass(string varName, object classData, BinaryWriter writer)
+    private void WriteClassNoCache(string varName, object classData, BinaryWriter writer)
     {
-        writer.Write(varName);
         writer.Write(ClassSaverManager.GetMarkerByteCode("StartClass"));
+        writer.Write(varName);
         
         var classType = classData.GetType();
         writer.Write(classType.AssemblyQualifiedName);
@@ -158,7 +156,7 @@ public class ClassSerializer
             if (field.IsPublic && field.GetCustomAttribute<DoNotSerialize>(false) != null) continue;
             if (field.IsPrivate && field.GetCustomAttribute<ForceSerialize>(false) == null) continue;
 
-            Serialize(field.GetValue(classData), field.FieldType, writer, field.Name);
+            SerializeNoCache(field.GetValue(classData), field.FieldType, writer, field.Name);
         }
         
         // process properties
@@ -168,12 +166,12 @@ public class ClassSerializer
         foreach (var property in properties)
         {
             // check if property can be serialized
-            bool isPublic = property.CanRead && property.CanWrite;
+            var isPublic = property is { CanRead: true, CanWrite: true };
 
             if (isPublic && property.GetCustomAttribute<DoNotSerialize>(false) != null) continue;
             if (!isPublic && property.GetCustomAttribute<ForceSerialize>(false) == null) continue;
             
-            Serialize(property.GetValue(classData), property.PropertyType, writer, property.Name);
+            SerializeNoCache(property.GetValue(classData), property.PropertyType, writer, property.Name);
         }
 
         writer.Write(ClassSaverManager.GetMarkerByteCode("EndScope"));
@@ -183,46 +181,27 @@ public class ClassSerializer
     /// Writes the object that implements the ISerializable interface.
     /// </summary>
     /// <param name="varName">The variable's name</param>
+    /// <param name="baseType">The base type of the serializable</param>
     /// <param name="value">The object value that implements ISerializable</param>
     /// <param name="writer">The binary writer</param>
-    private void WriteSerializable(string varName, ISerializable value, BinaryWriter writer)
+    private void WriteSerializableNoCache(string varName, Type baseType, ISerializable value, BinaryWriter writer)
     {
-        writer.Write(varName);
         writer.Write(ClassSaverManager.GetMarkerByteCode("StartSerializable"));
+        writer.Write(varName);
+        writer.Write(baseType.AssemblyQualifiedName);
         
         var toSerialize = value.Serialize();
-        Serialize(toSerialize, toSerialize.GetType(), writer);
+        SerializeNoCache(toSerialize, toSerialize.GetType(), writer);
         
         writer.Write(ClassSaverManager.GetMarkerByteCode("EndScope"));
     }
 
-    /// <summary>
-    /// Writes the primitive type.
-    /// </summary>
-    /// <param name="varName">It's variable name.</param>
-    /// <param name="value">The value to save to.</param>
-    /// <param name="writer">The writer instance</param>
-    private void WritePrimitive(string varName, object value, BinaryWriter writer)
-    {
-        // useful for future cases
-        switch (_cacheMode)
-        {
-            case CacheMode.None: WritePrimitiveNoCache(varName, value, writer); break;
-            default:
-                throw new ArgumentOutOfRangeException();
-        }
-    }
-
     private static void WritePrimitiveNoCache(string varName, object data, BinaryWriter writer)
     {
+        // mark as variable
+        writer.Write(ClassSaverManager.GetMarkerByteCode("StartPrimitive"));
         // write var name
         writer.Write(varName);
-        // mark as variable
-        writer.Write(ClassSaverManager.GetMarkerByteCode("StartVariable"));
-        
-        // write data type code
-        if (ClassSaverManager.GetPrimitiveByteCode(data, out var varTypeCode)) writer.Write(varTypeCode);
-        else throw new($"Unsupported primitive data type '{data.GetType().Name}'.");
         
         // write the data
         WritePrimitiveData(data, writer);
@@ -232,8 +211,11 @@ public class ClassSerializer
     private static void WritePrimitiveData(object data, BinaryWriter writer)
     {
         var dataType = data.GetType();
+        var typeCode = Type.GetTypeCode(dataType);
+        
+        writer.Write((int)typeCode);
 
-        switch (Type.GetTypeCode(dataType))
+        switch (typeCode)
         {
             case TypeCode.Boolean:
                 writer.Write((bool)data);
@@ -279,30 +261,28 @@ public class ClassSerializer
                 writer.Write((string)data);
                 break;
             case TypeCode.Empty:
-                // already wrote the null byte.
+                // write nothing
                 break;
             default:
                 throw new($"Primitive data type '{data.GetType().Name}' is not implemented.");
         }
     }
 
-    private void WriteCollection(string varName, Type dataType, ICollection collection, BinaryWriter writer)
+    private void WriteCollectionNoCache(string varName, Type dataType, ICollection collection, BinaryWriter writer)
     {
-        writer.Write(varName);
         writer.Write(ClassSaverManager.GetMarkerByteCode("StartCollection"));
+        writer.Write(varName);
         
-        // get the Collection count
-        var objects = collection as object[] ?? collection.Cast<object>().ToArray();
         var collectionCount = collection.Count;
         
         writer.Write(dataType.Name);
         writer.Write(collectionCount);
         
         // serialize each element
-        foreach (var obj in objects)
+        foreach (var obj in collection)
         {
             var objType = obj.GetType();
-            Serialize(obj, objType, writer);
+            SerializeNoCache(obj, objType, writer);
         }
 
         writer.Write(ClassSaverManager.GetMarkerByteCode("EndScope"));

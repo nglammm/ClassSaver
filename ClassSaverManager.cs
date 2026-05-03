@@ -16,19 +16,20 @@ public static class ClassSaverManager
     private const string XML_MarkersSectionName = "Markers";
     private const string XML_MarkersName = "name";
     private const string XML_MarkersValue = "value";
+    private const string XML_MarkersByteType = "byteType";
     // type map section
     private const string XML_TypeMapSectionName = "TypeMap";
     private const string XML_TypeMapName = "name";
     private const string XML_TypeMapValue = "code";
+    private const string XML_TypeType = "type";
     #endregion
     
-    
-    private static readonly Dictionary<string, byte> _markerMap = new();
-    private static readonly Dictionary<string, byte> _typeMap = new();
+    private static readonly Dictionary<string, (byte, string)> _markerMap = new();
+    private static readonly Dictionary<string, (byte, string)> _typeMap = new();
 
     static ClassSaverManager()
     {
-        XDocument doc = XDocument.Load(XML_Path);
+        var doc = XDocument.Load(XML_Path);
         if (doc.Root == null) throw new("Config/ClassSaverConfig.xml not found");
         
         // load data to marker map
@@ -40,8 +41,9 @@ public static class ClassSaverManager
         {
             var markerName = marker.Attribute(XML_MarkersName).Value;
             var markerValue = (byte)int.Parse(marker.Attribute(XML_MarkersValue).Value);
+            var markerType = marker.Attribute(XML_MarkersByteType).Value;
             
-            _markerMap.Add(markerName, markerValue);
+            _markerMap.Add(markerName, (markerValue, markerType));
         }
         
         // load data to type map
@@ -53,8 +55,9 @@ public static class ClassSaverManager
         {
             var typeName = typeMap.Attribute(XML_TypeMapName).Value;
             var typeValue = (byte)int.Parse(typeMap.Attribute(XML_TypeMapValue).Value);
+            var typeType = typeMap.Attribute(XML_TypeType).Value;
             
-            _typeMap.Add(typeName, typeValue);
+            _typeMap.Add(typeName, (typeValue, typeType));
         }
     }
     
@@ -69,17 +72,7 @@ public static class ClassSaverManager
     /// <returns>true/false depending on if it's a primitive or not</returns>
     public static bool IsPrimitive(Type type)
     {
-        if (_typeMap.ContainsKey(type.Name)) return true;
-        
-        // find via interface.
-        var interfaces = type.GetInterfaces();
-
-        foreach (var iface in interfaces)
-        {
-            if (_typeMap.ContainsKey(iface.Name)) return true;
-        }
-        
-        return false;
+        return _typeMap.ContainsKey(type.Name);
     }
     
     /// <summary>
@@ -89,7 +82,7 @@ public static class ClassSaverManager
     /// <returns>The marker byte code, will return error instead if not found.</returns>
     public static byte GetMarkerByteCode(string markerName)
     {
-        return _markerMap[markerName];
+        return _markerMap[markerName].Item1;
     }
     
     /// <summary>
@@ -104,6 +97,9 @@ public static class ClassSaverManager
         var dataType = data.GetType();
         var dataTypeName = dataType.Name;
 
-        return _typeMap.TryGetValue(dataTypeName, out byteCode);
+        if (!_typeMap.TryGetValue(dataTypeName, out var typeData)) return false;
+        
+        byteCode = typeData.Item1;
+        return true;
     }
 }
