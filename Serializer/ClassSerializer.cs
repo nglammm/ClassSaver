@@ -155,7 +155,7 @@ public class ClassSerializer
             // check if field can be serialized
             if (field.IsPublic && field.GetCustomAttribute<DoNotSerialize>(false) != null) continue;
             if (field.IsPrivate && field.GetCustomAttribute<ForceSerialize>(false) == null) continue;
-
+            
             SerializeNoCache(field.GetValue(classData), field.FieldType, writer, field.Name);
         }
         
@@ -173,7 +173,7 @@ public class ClassSerializer
             
             SerializeNoCache(property.GetValue(classData), property.PropertyType, writer, property.Name);
         }
-
+        
         writer.Write(ClassSaverManager.GetMarkerByteCode("EndScope"));
     }
     
