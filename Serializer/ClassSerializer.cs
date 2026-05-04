@@ -18,12 +18,30 @@ public class ClassSerializer
     /// <param name="desiredObj">The desired object to parse</param>
     /// <param name="dataStream">The file stream to output with</param>
     /// <param name="cacheMode">The cache mode to serialize with</param>
-    public void Serialize<T>(object desiredObj, Stream dataStream, CacheMode cacheMode = CacheMode.None) where T : new()
+    public void Serialize<T>(T desiredObj, Stream dataStream, CacheMode cacheMode = CacheMode.None) where T : new()
     {
         _cacheMode = cacheMode;
         _currentSerializingType = typeof(T);
         _currentSerializingObj = desiredObj;
 
+        using var writer = new BinaryWriter(dataStream);
+        
+        // write the first header
+        WriteSection(ClassSection.Header, writer);
+        
+        // write the cache section
+        WriteSection(ClassSection.Cache, writer);
+        
+        // write the third data section
+        WriteSection(ClassSection.Data, writer);
+    }
+
+    public void Serialize(object desiredObj, Stream dataStream, CacheMode cacheMode = CacheMode.None)
+    {
+        _cacheMode = cacheMode;
+        _currentSerializingType = desiredObj.GetType();
+        _currentSerializingObj = desiredObj;
+        
         using var writer = new BinaryWriter(dataStream);
         
         // write the first header
@@ -275,7 +293,7 @@ public class ClassSerializer
         
         var collectionCount = collection.Count;
         
-        writer.Write(dataType.Name);
+        writer.Write(dataType.AssemblyQualifiedName);
         writer.Write(collectionCount);
         
         // serialize each element

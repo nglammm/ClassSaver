@@ -38,6 +38,16 @@ public class ClassParser
         
         return ReadSection<T>(ClassSection.Data, reader);
     }
+
+    public object Parse(Type type, Stream stream)
+    {
+        using var reader = new BinaryReader(stream);
+        
+        _headerSection = ReadSection<HeaderSection>(ClassSection.Header, reader);
+        _cacheSection = ReadSection<CacheSection>(ClassSection.Cache, reader);
+        
+        return ReadSection(ClassSection.Data, reader);
+    }
     
     /// <summary>
     /// [TODO] Parses to an existing object.
@@ -52,7 +62,7 @@ public class ClassParser
         throw new NotImplementedException();
     }
     
-
+    #region Read Section functions
     private T ReadSection<T>(ClassSection section, BinaryReader reader) where T : new()
     {
         var startSectionByte = reader.ReadByte();
@@ -79,6 +89,37 @@ public class ClassParser
         }
     }
 
+    private object ReadSection(ClassSection section, BinaryReader reader)
+    {
+        var startSectionByte = reader.ReadByte();
+        if (ClassSaverManager.GetMarkerByteCode("StartSection") != startSectionByte)
+        {
+            throw new($"Expected '{ClassSaverManager.GetMarkerByteCode("StartSection"):x}', got '{startSectionByte:x}'.");
+        }
+
+        var sectionCode = reader.ReadInt32();
+        if (sectionCode != (int)section) throw new($"Expected section code '{sectionCode}', got '{section}'.");
+        
+        switch (section)
+        {
+            case ClassSection.Header:
+                var header = ReadSectionHeader(reader);
+                return !IsByte(reader, ClassSaverManager.GetMarkerByteCode("EndScope"), false)
+                    ? throw new("The expected end byte does not match")
+                    : header;
+            case ClassSection.Cache:
+                var cache = ReadSectionCache(reader);
+                return !IsByte(reader, ClassSaverManager.GetMarkerByteCode("EndScope"), false)
+                    ? throw new("The expected end byte does not match")
+                    : cache;
+            case ClassSection.Data:
+                return ReadSectionData(reader);
+            default:
+                throw new Exception($"Unimplemented section type '{section}'");
+        }
+    }
+    #endregion
+    
     /// <summary>
     /// Checks if a binary reader's current byte is a byte
     /// we expect or not.
@@ -97,20 +138,10 @@ public class ClassParser
     }
     
 
-    private HeaderSection ReadSectionHeader(BinaryReader reader)
-    {
-        return Parse<HeaderSection>(reader);
-    }
-
-    private CacheSection ReadSectionCache(BinaryReader reader)
-    {
-        return Parse<CacheSection>(reader);
-    }
-
-    private T ReadSectionData<T>(BinaryReader reader) where T : new()
-    {
-        return Parse<T>(reader);
-    }
+    private HeaderSection ReadSectionHeader(BinaryReader reader) => Parse<HeaderSection>(reader);
+    private CacheSection ReadSectionCache(BinaryReader reader) => Parse<CacheSection>(reader);
+    private T ReadSectionData<T>(BinaryReader reader) where T : new() => Parse<T>(reader);
+    private object ReadSectionData(BinaryReader reader) => Parse(reader);
 
     private T Parse<T>(BinaryReader reader) where T : new()
     {
@@ -212,6 +243,8 @@ public class ClassParser
     {
         var typeCode = reader.ReadInt32();
         object output = null;
+
+        var found = false;
         
         switch ((TypeCode)typeCode)
         {

@@ -33,6 +33,8 @@
         <Type name="Decimal" code="20" type="struct"/>
         <!-- Custom user-set serializable data is also considered a primitive data type. -->
         <Type name="ISerializable" code="21" type="interface"/>
+        <!-- Essential for dictionary -->
+        <Type name="KeyValuePair" code="22" type="struct"/>
     </TypeMap>
     
 </ClassSaverConfig>
