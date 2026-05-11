@@ -1,5 +1,8 @@
 ﻿using System.Collections;
 using System.Reflection;
+using ClassSaver.Internal;
+using ClassSaver.Constants;
+using ClassSaver.Structure;
 
 namespace ClassSaver;
 
@@ -11,12 +14,13 @@ public class ClassSerializer
     private CacheMode _cacheMode;
     private Type? _currentSerializingType;
     private object? _currentSerializingObj;
-
+    
+    #region public functions
     /// <summary>
-    /// Serializes the desired object and then tries to save it.
+    /// Serializes the desired object to the data stream.
     /// </summary>
     /// <param name="desiredObj">The desired object to parse</param>
-    /// <param name="dataStream">The file stream to output with</param>
+    /// <param name="dataStream">The data stream to work with</param>
     /// <param name="cacheMode">The cache mode to serialize with</param>
     public void Serialize<T>(T desiredObj, Stream dataStream, CacheMode cacheMode = CacheMode.None) where T : new()
     {
@@ -35,7 +39,7 @@ public class ClassSerializer
         // write the third data section
         WriteSection(ClassSection.Data, writer);
     }
-
+    
     public void Serialize(object desiredObj, Stream dataStream, CacheMode cacheMode = CacheMode.None)
     {
         _cacheMode = cacheMode;
@@ -53,6 +57,9 @@ public class ClassSerializer
         // write the third data section
         WriteSection(ClassSection.Data, writer);
     }
+    #endregion
+    
+    #region section write
 
     /// <summary>
     /// Used for writing desired sections.
@@ -63,7 +70,7 @@ public class ClassSerializer
     private void WriteSection(ClassSection section, BinaryWriter writer)
     {
         // already written the byte code here.
-        writer.Write(ClassSaverManager.GetMarkerByteCode("StartSection"));
+        writer.Write((byte)Markers.StartSection);
         writer.Write((int)section);
 
         switch (section)
@@ -81,7 +88,7 @@ public class ClassSerializer
                 throw new ArgumentOutOfRangeException();
         }
 
-        writer.Write(ClassSaverManager.GetMarkerByteCode("EndScope"));
+        writer.Write((byte)Markers.EndScope);
     }
 
     
@@ -108,18 +115,11 @@ public class ClassSerializer
         // run the appropriate cache
         Serialize(_currentSerializingObj, _currentSerializingType, writer);
     }
+    #endregion
 
-
-    void Serialize(object desiredObj, Type desiredType, BinaryWriter writer)
-    {
-        switch (_cacheMode)
-        {
-            case CacheMode.None: SerializeNoCache(desiredObj, desiredType, writer); break;
-            default: throw new ArgumentOutOfRangeException();
-        }
-    }
-
-
+    #region No Cache Functions
+    
+    #region Serializer manager
     /// <summary>
     /// Serializes the desired object and then tries to save it.
     /// </summary>
@@ -131,16 +131,14 @@ public class ClassSerializer
     ///     </para>
     /// </param>
     /// <param name="writer">The writer object</param>
-    private void SerializeNoCache(object desiredObj, Type objectType, BinaryWriter writer, string objectVarName = "")
+    private void SerializeNoCache(object? desiredObj, Type objectType, BinaryWriter writer, string objectVarName = "")
     {
         if (string.IsNullOrEmpty(objectVarName)) objectVarName = objectType.Name;
         
-        // is primitive
-        if (ClassSaverManager.IsPrimitive(objectType))
+        // is a primitive data type
+        if (Manager.IsPrimitive(objectType))
         {
-            // check for primitive type
-            if (objectType.Name == "ISerializable") WriteSerializableNoCache(objectVarName, objectType, desiredObj as ISerializable, writer);
-            else WritePrimitiveNoCache(objectVarName, desiredObj, writer);
+            WritePrimitiveNoCache(objectVarName, desiredObj, writer);
             return;
         }
         
@@ -154,18 +152,19 @@ public class ClassSerializer
         // is a class
         WriteClassNoCache(objectVarName, desiredObj, writer);
     }
-    
+    #endregion
 
+    #region class writer
     private void WriteClassNoCache(string varName, object classData, BinaryWriter writer)
     {
-        writer.Write(ClassSaverManager.GetMarkerByteCode("StartClass"));
+        writer.Write((byte)Markers.StartClass);
         writer.Write(varName);
         
         var classType = classData.GetType();
         writer.Write(classType.AssemblyQualifiedName);
 
         // get fields & save
-        var fields = classType.GetFields(ClassSaverManager.BindingFlagsAll);
+        var fields = classType.GetFields(Manager.BindingFlagsAll);
             
         // process fields
         foreach (var field in fields)
@@ -178,7 +177,7 @@ public class ClassSerializer
         }
         
         // process properties
-        var properties =  classType.GetProperties(ClassSaverManager.BindingFlagsAll);
+        var properties =  classType.GetProperties(Manager.BindingFlagsAll);
         
         // process properties
         foreach (var property in properties)
@@ -192,9 +191,11 @@ public class ClassSerializer
             SerializeNoCache(property.GetValue(classData), property.PropertyType, writer, property.Name);
         }
         
-        writer.Write(ClassSaverManager.GetMarkerByteCode("EndScope"));
+        writer.Write((byte)Markers.EndScope);
     }
+    #endregion
     
+    #region ISerializable write
     /// <summary>
     /// Writes the object that implements the ISerializable interface.
     /// </summary>
@@ -204,105 +205,195 @@ public class ClassSerializer
     /// <param name="writer">The binary writer</param>
     private void WriteSerializableNoCache(string varName, Type baseType, ISerializable value, BinaryWriter writer)
     {
-        writer.Write(ClassSaverManager.GetMarkerByteCode("StartSerializable"));
+        writer.Write((byte)Markers.StartSerializable);
         writer.Write(varName);
         writer.Write(baseType.AssemblyQualifiedName);
         
         var toSerialize = value.Serialize();
         SerializeNoCache(toSerialize, toSerialize.GetType(), writer);
         
-        writer.Write(ClassSaverManager.GetMarkerByteCode("EndScope"));
+        writer.Write((byte)Markers.EndScope);
     }
-
-    private static void WritePrimitiveNoCache(string varName, object data, BinaryWriter writer)
+    #endregion
+    
+    #region Write primitive
+    private void WritePrimitiveNoCache(string varName, object? data, BinaryWriter writer)
     {
+        var dataType = data?.GetType();
+        
+        // check if serializable or not to write
+        if (Manager.IsPrimitiveDatatypeOf(dataType, PrimitiveDatatypes.ISerializable))
+        {
+            WriteSerializableNoCache(varName, dataType, data as ISerializable, writer);
+            return;
+        }
+        
         // mark as variable
-        writer.Write(ClassSaverManager.GetMarkerByteCode("StartPrimitive"));
+        writer.Write((byte)Markers.StartVariable);
         // write var name
         writer.Write(varName);
         
         // write the data
-        WritePrimitiveData(data, writer);
-        writer.Write(ClassSaverManager.GetMarkerByteCode("EndScope"));
+        WritePrimitiveDataNoCache(data, writer);
+        writer.Write((byte)Markers.EndScope);
     }
-
-    private static void WritePrimitiveData(object data, BinaryWriter writer)
+    
+    /// <summary>
+    /// Writes the primitive data type value (excluding ISerializable because it got its own function).
+    /// </summary>
+    /// <param name="data">The data to write</param>
+    /// <param name="writer">The binary writer</param>
+    /// <exception cref="Exception">Primitive data type not implemented yet.</exception>
+    private void WritePrimitiveDataNoCache(object data, BinaryWriter writer)
     {
-        var dataType = data.GetType();
-        var typeCode = Type.GetTypeCode(dataType);
+        if (!Manager.GetPrimitiveByteCode(data, out var typeByte)) throw new($"No such data type {data.GetType().Name}.");
         
-        writer.Write((int)typeCode);
+        writer.Write(typeByte);
 
-        switch (typeCode)
+        switch (typeByte)
         {
-            case TypeCode.Boolean:
+            case (byte)PrimitiveDatatypes.Boolean:
                 writer.Write((bool)data);
                 break;
-            case TypeCode.Byte:
+            case (byte)PrimitiveDatatypes.Byte:
                 writer.Write((byte)data);
                 break;
-            case TypeCode.SByte:
+            case (byte)PrimitiveDatatypes.SByte:
                 writer.Write((sbyte)data);
                 break;
-            case TypeCode.Char:
+            case (byte)PrimitiveDatatypes.Char:
                 writer.Write((char)data);
                 break;
-            case TypeCode.Decimal:
+            case (byte)PrimitiveDatatypes.Decimal:
                 writer.Write((decimal)data);
                 break;
-            case TypeCode.Double:
+            case (byte)PrimitiveDatatypes.Double:
                 writer.Write((double)data);
                 break;
-            case TypeCode.Single:
+            case (byte)PrimitiveDatatypes.Single:
                 writer.Write((float)data);
                 break;
-            case TypeCode.Int32:
+            case (byte)PrimitiveDatatypes.Int32:
                 writer.Write((int)data);
                 break;
-            case TypeCode.UInt32:
+            case (byte)PrimitiveDatatypes.UInt32:
                 writer.Write((uint)data);
                 break;
-            case TypeCode.Int64:
+            case (byte)PrimitiveDatatypes.Int64:
                 writer.Write((long)data);
                 break;
-            case TypeCode.UInt64:
+            case (byte)PrimitiveDatatypes.UInt64:
                 writer.Write((ulong)data);
                 break;
-            case TypeCode.Int16:
+            case (byte)PrimitiveDatatypes.Int16:
                 writer.Write((short)data);
                 break;
-            case TypeCode.UInt16:
+            case (byte)PrimitiveDatatypes.UInt16:
                 writer.Write((ushort)data);
                 break;
-            case TypeCode.String:
-                // binary writer already includes the length of string
+            case (byte)PrimitiveDatatypes.String:
                 writer.Write((string)data);
                 break;
-            case TypeCode.Empty:
-                // write nothing
+            case (byte)PrimitiveDatatypes.Null:
+                // write nothing for null
                 break;
             default:
-                throw new($"Primitive data type '{data.GetType().Name}' is not implemented.");
+                throw new($"Unimplemented data type {data.GetType().Name}.");
         }
     }
-
+    
+    #endregion
+    
+    #region collection writes
     private void WriteCollectionNoCache(string varName, Type dataType, ICollection collection, BinaryWriter writer)
     {
-        writer.Write(ClassSaverManager.GetMarkerByteCode("StartCollection"));
+        writer.Write((byte)Markers.StartCollection);
         writer.Write(varName);
         
         var collectionCount = collection.Count;
         
         writer.Write(dataType.AssemblyQualifiedName);
+        
+        // write all the params to this collection
+        var genericArguments = dataType.GetGenericArguments();
+        writer.Write(genericArguments.Length);
+        
+        foreach (var argType in genericArguments)
+        {
+            writer.Write(argType.AssemblyQualifiedName);
+        }
+        
+        if (!Manager.GetCollectionInterfaceByteCode(dataType, out var collectionByteCode))
+            throw new($"Can't find collection byte code for {dataType.Name}");
+        
+        writer.Write(collectionByteCode);
         writer.Write(collectionCount);
         
-        // serialize each element
-        foreach (var obj in collection)
+        switch (collectionByteCode)
         {
-            var objType = obj.GetType();
-            SerializeNoCache(obj, objType, writer);
+            case (byte)CollectionInterfaces.IList:
+                WriteIListNoCache(collection as IList, genericArguments, writer);
+                break;
+            case (byte)CollectionInterfaces.IDictionary:
+                WriteIDictionaryNoCache(collection as IDictionary, genericArguments, writer);
+                break;
+            default:
+                throw new("Unsupported parsing ICollection type " + dataType.Name);
         }
 
-        writer.Write(ClassSaverManager.GetMarkerByteCode("EndScope"));
+        writer.Write((byte)Markers.EndScope);
     }
+
+    private void WriteIListNoCache(IList? data, Type[] genericArgs, BinaryWriter writer)
+    {
+        if (data == null) return;
+        
+        if (genericArgs.Length != 1)
+            throw new($"Passed in generic arguments size is not '1'.");
+        
+        // serialize each element
+        foreach (var item in data)
+        {
+            writer.Write((byte)CollectionMarkers.IListElementStart);
+            SerializeNoCache(item, genericArgs[0], writer);
+            writer.Write((byte)Markers.EndScope);
+        }
+    }
+    
+    private void WriteIDictionaryNoCache(IDictionary? data, Type[] genericArgs, BinaryWriter writer)
+    {
+        if (data == null) return;
+        // generic args array MUST be 2
+        if (genericArgs.Length != 2)
+            throw new($"Passed in generic arguments size is not '2'.");
+        
+        foreach (DictionaryEntry item in data)
+        {
+            // write key
+            writer.Write((byte)CollectionMarkers.IDictionaryKeyStart);
+            SerializeNoCache(item.Key, genericArgs[0], writer);
+            writer.Write((byte)Markers.EndScope);
+            
+            // write value
+            writer.Write((byte)CollectionMarkers.IDictionaryValueStart);
+            SerializeNoCache(item.Value, genericArgs[1], writer);
+            writer.Write((byte)Markers.EndScope);
+        }
+    }
+    
+    #endregion
+    
+    #endregion
+    
+    #region General Functions
+    void Serialize(object desiredObj, Type desiredType, BinaryWriter writer)
+    {
+        switch (_cacheMode)
+        {
+            case CacheMode.None: SerializeNoCache(desiredObj, desiredType, writer); break;
+            default: throw new ArgumentOutOfRangeException();
+        }
+    }
+    
+    #endregion
 }

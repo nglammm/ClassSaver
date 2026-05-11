@@ -1,4 +1,4 @@
-namespace ClassSaver;
+namespace ClassSaver.Structure;
 
 /// <summary>
 /// The cache modes available.

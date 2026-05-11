@@ -124,7 +124,7 @@ static class ClassSaverTest
         
         using (var readStream = new FileStream(fileName, FileMode.Open, FileAccess.Read))
         {
-            objectB = parser.Parse(currentType, readStream);
+            objectB = parser.Parse(readStream);
         }
 
         if (objectA?.ToString() == objectB?.ToString())

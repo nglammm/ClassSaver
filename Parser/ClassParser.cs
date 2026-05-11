@@ -1,6 +1,8 @@
 using System.Collections;
-using System.Reflection;
+using ClassSaver.Internal;
+using ClassSaver.Constants;
 using System.Runtime.CompilerServices;
+using ClassSaver.Structure;
 
 namespace ClassSaver;
 
@@ -21,12 +23,13 @@ public class ClassParser
     
     private Dictionary<string, Type> _typeCacheMap = new();
     
+    #region public parse functions
     /// <summary>
     /// Parses the data stream and creates a <b>new</b> instance of the data on output.
     /// </summary>
     /// <param name="stream">The data stream</param>
     /// <typeparam name="T">The type expected to parse</typeparam>
-    /// <returns></returns>
+    /// <returns>The object parsed and returned as new</returns>
     public T Parse<T>(Stream stream) where T : new()
     {
         _refObject = null;
@@ -38,8 +41,18 @@ public class ClassParser
         
         return ReadSection<T>(ClassSection.Data, reader);
     }
-
-    public object Parse(Type type, Stream stream)
+    
+    /// <summary>
+    /// It is remarkably faster and safer if you run Parse with type reference overload
+    /// as the parser knows how to process the object parsed.
+    /// <para></para>
+    /// <para>
+    /// Parses an input stream
+    /// </para>
+    /// </summary>
+    /// <param name="stream">The data stream</param>
+    /// <returns>The object from the stream.</returns>
+    public object Parse(Stream stream)
     {
         using var reader = new BinaryReader(stream);
         
@@ -61,14 +74,15 @@ public class ClassParser
 
         throw new NotImplementedException();
     }
+    #endregion
     
     #region Read Section functions
     private T ReadSection<T>(ClassSection section, BinaryReader reader) where T : new()
     {
         var startSectionByte = reader.ReadByte();
-        if (ClassSaverManager.GetMarkerByteCode("StartSection") != startSectionByte)
+        if ((byte)Markers.StartSection != startSectionByte)
         {
-            throw new($"Expected '{ClassSaverManager.GetMarkerByteCode("StartSection"):x}', got '{startSectionByte:x}'.");
+            throw new($"Expected '{Markers.StartSection:x}', got '{startSectionByte:x}'.");
         }
 
         var sectionCode = reader.ReadInt32();
@@ -78,10 +92,10 @@ public class ClassParser
         {
             case ClassSection.Header:
                 var header = ReadSectionHeader(reader);
-                return !IsByte(reader, ClassSaverManager.GetMarkerByteCode("EndScope"), false) ? throw new("The expected end byte does not match") : Unsafe.As<HeaderSection, T>(ref header);
+                return !IsByte(reader, (byte)Markers.EndScope, false) ? throw new("The expected end byte does not match") : Unsafe.As<HeaderSection, T>(ref header);
             case ClassSection.Cache:
                 var cache = ReadSectionCache(reader);
-                return !IsByte(reader, ClassSaverManager.GetMarkerByteCode("EndScope"), false) ? throw new("The expected end byte does not match") : Unsafe.As<CacheSection, T>(ref cache);
+                return !IsByte(reader, (byte)Markers.EndScope, false) ? throw new("The expected end byte does not match") : Unsafe.As<CacheSection, T>(ref cache);
             case ClassSection.Data:
                 return ReadSectionData<T>(reader);
             default:
@@ -92,9 +106,9 @@ public class ClassParser
     private object ReadSection(ClassSection section, BinaryReader reader)
     {
         var startSectionByte = reader.ReadByte();
-        if (ClassSaverManager.GetMarkerByteCode("StartSection") != startSectionByte)
+        if ((byte)Markers.StartSection != startSectionByte)
         {
-            throw new($"Expected '{ClassSaverManager.GetMarkerByteCode("StartSection"):x}', got '{startSectionByte:x}'.");
+            throw new($"Expected '{Markers.StartSection:x}', got '{startSectionByte:x}'.");
         }
 
         var sectionCode = reader.ReadInt32();
@@ -104,12 +118,12 @@ public class ClassParser
         {
             case ClassSection.Header:
                 var header = ReadSectionHeader(reader);
-                return !IsByte(reader, ClassSaverManager.GetMarkerByteCode("EndScope"), false)
+                return !IsByte(reader, (byte)Markers.EndScope, false)
                     ? throw new("The expected end byte does not match")
                     : header;
             case ClassSection.Cache:
                 var cache = ReadSectionCache(reader);
-                return !IsByte(reader, ClassSaverManager.GetMarkerByteCode("EndScope"), false)
+                return !IsByte(reader, (byte)Markers.EndScope, false)
                     ? throw new("The expected end byte does not match")
                     : cache;
             case ClassSection.Data:
@@ -118,7 +132,300 @@ public class ClassParser
                 throw new Exception($"Unimplemented section type '{section}'");
         }
     }
+    
+    private HeaderSection ReadSectionHeader(BinaryReader reader) => Parse<HeaderSection>(reader);
+    private CacheSection ReadSectionCache(BinaryReader reader) => Parse<CacheSection>(reader);
+    private T ReadSectionData<T>(BinaryReader reader) where T : new() => Parse<T>(reader);
+    private object ReadSectionData(BinaryReader reader) => Parse(reader);
+    
     #endregion
+
+    #region initial parse functions
+    // the main parse function
+    private T Parse<T>(BinaryReader reader) where T : new()
+    {
+        return (T)Parse(reader);
+    }
+
+    private object? Parse(BinaryReader reader)
+    {
+        if (_cacheSection == null)
+        {
+            return ParseNoCache(reader);
+        }
+
+        switch (_cacheSection.CacheMode)
+        {
+            case (int)CacheMode.None:
+                return ParseNoCache(reader);
+            default:
+                throw new NotImplementedException();
+        }
+    }
+    #endregion
+    
+    #region No cache functions
+    
+    #region parse functions
+    /// <summary>
+    /// Starts parsing at the start of any start byte.
+    /// </summary>
+    /// <param name="reader">Binary Reader instance</param>
+    /// <returns>Object after parse</returns>
+    private object? ParseNoCache(BinaryReader reader)
+    {
+        return ParseNoCache(reader, out _);
+    }
+    
+    private object? ParseNoCache(BinaryReader reader, out string varName)
+    {
+        // variables data
+        var varMarkerByte = reader.ReadByte();
+        varName = reader.ReadString();
+        object? varItem;
+
+        switch (varMarkerByte)
+        {
+            case (byte)Markers.StartVariable:
+                varItem = ReadPrimitiveNoCache(reader);
+                break;
+            case (byte)Markers.StartCollection:
+                varItem = ReadCollectionNoCache(reader);
+                break;
+            case (byte)Markers.StartClass:
+                varItem = ReadClassNoCache(GetTypeFromString(reader.ReadString()), reader);
+                break;
+            case (byte)Markers.StartSerializable:
+                varItem = ReadISerializableNoCache(reader);
+                break;
+            default:
+                throw new($"Unsupported byte type '{varMarkerByte}'.");
+        }
+        
+        // last byte is handled in those functions.
+        return varItem;
+    }
+    #endregion
+    
+    #region read class
+    private object? ReadClassNoCache(Type tType, BinaryReader reader)
+    {
+        // preload all variables
+        var fieldsMap = tType.GetFields(Manager.BindingFlagsAll).ToDictionary(field => field.Name);
+        var propertiesMap = tType.GetProperties(Manager.BindingFlagsAll).ToDictionary(p => p.Name);
+        
+        // preparing the outputs
+        var outputClass = Activator.CreateInstance(tType);
+
+        while (!IsByte(reader, (byte)Markers.EndScope))
+        {
+            var varData = ParseNoCache(reader, out var varName);
+            
+            // set to variable
+            if (fieldsMap.TryGetValue(varName, out var field)) field.SetValue(outputClass, varData);
+            else if (propertiesMap.TryGetValue(varName, out var property)) property.SetValue(outputClass, varData);
+            else throw new($"No such variable '{varName}' found in type '{tType.Name}'.");
+        }
+        
+        reader.BaseStream.Position += 1; // it is end scope byte here so pass it.
+        
+        return outputClass;
+    }
+    #endregion
+
+    #region read collection
+    private object? ReadCollectionNoCache(BinaryReader reader)
+    {
+        var collectionTypeString = reader.ReadString();
+        var baseCollectionType = GetTypeFromString(collectionTypeString);
+        
+        // read and gets all the generic type args
+        var genericArgumentLength = reader.ReadInt32();
+        var genericArguments = new Type[genericArgumentLength];
+
+        for (var i = 0; i < genericArguments.Length; i++)
+        {
+            var genericType = GetTypeFromString(reader.ReadString());
+            genericArguments[i] = genericType;
+        }
+
+        var collectionByte = reader.ReadByte();
+        
+        object? outputCollection;
+
+        switch (collectionByte)
+        {
+            case (byte)CollectionInterfaces.IList:
+                outputCollection = ReadIListNoCache(baseCollectionType, genericArguments, reader);
+                break;
+            case (byte)CollectionInterfaces.IDictionary:
+                outputCollection = ReadIDictionaryNoCache(baseCollectionType, genericArguments, reader);
+                break;
+            default:
+                throw new("Unsupported parsing ICollection type " + baseCollectionType.Name);
+        }
+
+        return !IsByte(reader, (byte)Markers.EndScope, false) ? throw new($"End byte scope not found.") : outputCollection;
+    }
+
+    private object ReadIListNoCache(Type baseListType, Type[] genericTypes, BinaryReader reader)
+    {
+        var collectionCount = reader.ReadInt32();
+        var outputBaseType = GetTypeFromString(baseListType.AssemblyQualifiedName);
+        var outputType = outputBaseType.MakeGenericType(genericTypes);
+        
+        var outputCollection = Activator.CreateInstance(outputType);
+
+        if (outputCollection is not IList iList) throw new($"Object passed in is not an IList.");
+
+        for (var i = 0; i < collectionCount; i++)
+        {
+            var startElementByte = reader.ReadByte();
+            if (startElementByte != (byte)CollectionMarkers.IListElementStart)
+                throw new($"Expected start byte for ilist, got {startElementByte:x}.");
+            
+            iList.Add(ParseNoCache(reader));
+            
+            var endScopeByte = reader.ReadByte();
+            if (endScopeByte != (byte)Markers.EndScope) 
+                throw new($"End byte scope not found. Got : {endScopeByte:x}.");
+        }
+
+        return iList;
+    }
+
+    
+    private object ReadIDictionaryNoCache(Type baseDictionaryType, Type[] genericTypes, BinaryReader reader)
+    {
+        var collectionCount = reader.ReadInt32();
+        
+        var outputBaseType = baseDictionaryType.GetGenericTypeDefinition();
+        var outputType = outputBaseType.MakeGenericType(genericTypes);
+        
+        var outputCollection = Activator.CreateInstance(outputType);
+        if (outputCollection is not IDictionary iDictionary) throw new($"Object passed in is not an IDictionary.");
+
+        for (var i = 0; i < collectionCount; i++)
+        {
+            var startKeyByte = reader.ReadByte();
+            if (startKeyByte != (byte)CollectionMarkers.IDictionaryKeyStart)
+                throw new($"Expected start byte for IDictionary's key start, got {startKeyByte:x}.");
+
+            var key = ParseNoCache(reader);
+            
+            var endKeyByte = reader.ReadByte();
+            if (endKeyByte != (byte)Markers.EndScope)
+                throw new($"Expected end byte for end scope, got {endKeyByte:x} instead.");
+            
+            var startValueByte = reader.ReadByte();
+            if (startValueByte != (byte)CollectionMarkers.IDictionaryValueStart)
+                throw new($"Expected start byte for IDictionary's value start, got {startValueByte:x}.");
+            
+            var value = ParseNoCache(reader);
+            
+            var endValueByte = reader.ReadByte();
+            if (endValueByte != (byte)Markers.EndScope)
+                throw new($"Expected end byte for end scope, got {endValueByte:x} instead.");
+            
+            iDictionary.Add(key, value);
+        }
+        
+        return iDictionary;
+    }
+    #endregion
+    
+    #region read iserializable
+    private object ReadISerializableNoCache(BinaryReader reader)
+    {
+        var baseTypeName = reader.ReadString();
+        var baseType = GetTypeFromString(baseTypeName);
+        
+        var baseObj = Activator.CreateInstance(baseType);
+        if (baseObj is not ISerializable serializable)
+        {
+            throw new($"Type '{baseTypeName}' does not implement ISerializable.");
+        }
+        
+        var parseObj = ParseNoCache(reader);
+        serializable.Parse(parseObj);
+        
+        return !IsByte(reader, (byte)Markers.EndScope, false) ? throw new($"End byte scope not found.") : baseObj;
+    }
+    #endregion
+    
+    #region read primitive datatypes
+    private object? ReadPrimitiveNoCache(BinaryReader reader)
+    {
+        var typeByte = reader.ReadByte();
+        object? output = null;
+
+        switch (typeByte)
+        {
+            case (byte)PrimitiveDatatypes.Boolean:
+                output = reader.ReadBoolean();
+                break;
+            case (byte)PrimitiveDatatypes.Byte:
+                output = reader.ReadByte();
+                break;
+            case (byte)PrimitiveDatatypes.SByte:
+                output = reader.ReadSByte();
+                break;
+            case (byte)PrimitiveDatatypes.Int16:
+                output = reader.ReadInt16();
+                break;
+            case (byte)PrimitiveDatatypes.UInt16:
+                output = reader.ReadUInt16();
+                break;
+            case (byte)PrimitiveDatatypes.Int32:
+                output = reader.ReadInt32();
+                break;
+            case (byte)PrimitiveDatatypes.UInt32:
+                output = reader.ReadUInt32();
+                break;
+            case (byte)PrimitiveDatatypes.Int64:
+                output = reader.ReadInt64();
+                break;
+            case (byte)PrimitiveDatatypes.UInt64:
+                output = reader.ReadUInt64();
+                break;
+            case (byte)PrimitiveDatatypes.Single:
+                output = reader.ReadSingle();
+                break;
+            case (byte)PrimitiveDatatypes.Double:
+                output = reader.ReadDouble();
+                break;
+            case (byte)PrimitiveDatatypes.Decimal:
+                output = reader.ReadDecimal();
+                break;
+            case (byte)PrimitiveDatatypes.String:
+                output = reader.ReadString();
+                break;
+            case (byte)PrimitiveDatatypes.Null:
+                // read nothing
+                break;
+            default:
+                throw new($"Unimplemented data type to parse: '{typeByte:x}'.");
+        }
+
+        return !IsByte(reader, (byte)Markers.EndScope, false) ? throw new($"End byte scope not found") : output;
+    }
+    #endregion
+    
+    #endregion
+    
+    #region general functions
+    private Type GetTypeFromString(string typeName)
+    {
+        if (!_typeCacheMap.TryGetValue(typeName, out var type))
+        {
+            type = Type.GetType(typeName);
+            if (type == null) throw new($"There is no such type named '{typeName}'");
+            // add to cache
+            _typeCacheMap.Add(typeName, type);
+        }
+
+        return type;
+    }
     
     /// <summary>
     /// Checks if a binary reader's current byte is a byte
@@ -136,181 +443,5 @@ public class ClassParser
         
         return readByte == expectedByte;
     }
-    
-
-    private HeaderSection ReadSectionHeader(BinaryReader reader) => Parse<HeaderSection>(reader);
-    private CacheSection ReadSectionCache(BinaryReader reader) => Parse<CacheSection>(reader);
-    private T ReadSectionData<T>(BinaryReader reader) where T : new() => Parse<T>(reader);
-    private object ReadSectionData(BinaryReader reader) => Parse(reader);
-
-    private T Parse<T>(BinaryReader reader) where T : new()
-    {
-        return (T)Parse(reader);
-    }
-    
-    /// <summary>
-    /// Starts parsing at the start of any start byte.
-    /// </summary>
-    /// <param name="reader">Binary Reader instance</param>
-    /// <returns>Object after parse</returns>
-    private object Parse(BinaryReader reader)
-    {
-        return Parse(reader, out _);
-    }
-    
-    private object Parse(BinaryReader reader, out string varName)
-    {
-        // variables data
-        var varTypeByte = reader.ReadByte();
-        varName = reader.ReadString();
-        object varItem;
-            
-        // map to the correct section
-        if (varTypeByte == ClassSaverManager.GetMarkerByteCode("StartCollection")) varItem = ReadCollection(reader);
-        else if (varTypeByte == ClassSaverManager.GetMarkerByteCode("StartClass")) varItem = ReadClass(GetTypeFromString(reader.ReadString()), reader); // class type is assembly qualified
-        else if (varTypeByte == ClassSaverManager.GetMarkerByteCode("StartSerializable")) varItem = ReadISerializable(reader);
-        else if (varTypeByte == ClassSaverManager.GetMarkerByteCode("StartPrimitive")) varItem = ReadPrimitive(reader);
-        else throw new($"Unsupported byte type '{varTypeByte}'.");
-        
-        // last byte is handled in those functions.
-        
-        return varItem;
-    }
-
-    private object ReadClass(Type tType, BinaryReader reader)
-    {
-        
-        // preload all variables
-        var fieldsMap = tType.GetFields(ClassSaverManager.BindingFlagsAll).ToDictionary(field => field.Name);
-        var propertiesMap = tType.GetProperties(ClassSaverManager.BindingFlagsAll).ToDictionary(p => p.Name);
-        
-        // preparing the outputs
-        var outputClass = Activator.CreateInstance(tType);
-
-        while (!IsByte(reader, ClassSaverManager.GetMarkerByteCode("EndScope")))
-        {
-            var varData = Parse(reader, out var varName);
-            
-            // set to variable
-            if (fieldsMap.TryGetValue(varName, out var field)) field.SetValue(outputClass, varData);
-            else if (propertiesMap.TryGetValue(varName, out var property)) property.SetValue(outputClass, varData);
-            else throw new($"No such variable '{varName}' found in type '{tType.Name}'.");
-        }
-        
-        reader.BaseStream.Position += 1; // it is end scope byte here so pass it.
-        
-        return outputClass;
-    }
-
-    private ICollection<object>? ReadCollection(BinaryReader reader)
-    {
-        var collectionTypeString = reader.ReadString();
-        var collectionType = GetTypeFromString(collectionTypeString);
-        
-        var collectionLength = reader.ReadInt32();
-        var outputCollection = Activator.CreateInstance(collectionType) as ICollection<object>;
-
-        for (int i = 0; i < collectionLength; i++)
-        {
-            var collectionItem = Parse(reader);
-            outputCollection.Add(collectionItem);
-        }
-
-        return !IsByte(reader, ClassSaverManager.GetMarkerByteCode("EndScope"), false) ? throw new($"End byte scope not found.") : outputCollection;
-    }
-
-    private object ReadISerializable(BinaryReader reader)
-    {
-        var baseTypeName = reader.ReadString();
-        var baseType = GetTypeFromString(baseTypeName);
-
-        // add to cache
-        _typeCacheMap.Add(baseTypeName, baseType);
-        
-        var baseObj = Activator.CreateInstance(baseType);
-        if (baseObj is not ISerializable serializable)
-        {
-            throw new($"Type '{baseTypeName}' does not implement ISerializable.");
-        }
-        
-        var parseObj = Parse(reader);
-        serializable.Parse(parseObj);
-        
-        return !IsByte(reader, ClassSaverManager.GetMarkerByteCode("EndScope"), false) ? throw new($"End byte scope not found.") : baseObj;
-    }
-
-    private object? ReadPrimitive(BinaryReader reader)
-    {
-        var typeCode = reader.ReadInt32();
-        object output = null;
-
-        var found = false;
-        
-        switch ((TypeCode)typeCode)
-        {
-            case TypeCode.Boolean:
-                output = reader.ReadBoolean();
-                break;
-            case TypeCode.Byte:
-                output = reader.ReadByte();
-                break;
-            case TypeCode.SByte:
-                output = reader.ReadSByte();
-                break;
-            case TypeCode.Char:
-                output = reader.ReadChar();
-                break;
-            case TypeCode.Decimal:
-                output = reader.ReadDecimal();
-                break;
-            case TypeCode.Double:
-                output = reader.ReadDouble();
-                break;
-            case TypeCode.Single:
-                output = reader.ReadSingle();
-                break;
-            case TypeCode.Int32:
-                output = reader.ReadInt32();
-                break;
-            case TypeCode.UInt32:
-                output = reader.ReadUInt32();
-                break;
-            case TypeCode.Int64:
-                output = reader.ReadInt64();
-                break;
-            case TypeCode.UInt64:
-                output = reader.ReadUInt64();
-                break;
-            case TypeCode.Int16:
-                output = reader.ReadInt16();
-                break;
-            case TypeCode.UInt16:
-                output = reader.ReadUInt16();
-                break;
-            case TypeCode.String:
-                // binary writer already includes the length of string
-                output = reader.ReadString();
-                break;
-            case TypeCode.Empty:
-                // write nothing
-                break;
-            default:
-                throw new($"Primitive data type '{(TypeCode)typeCode}' is not implemented.");
-        }
-
-        return !IsByte(reader, ClassSaverManager.GetMarkerByteCode("EndScope"), false) ? throw new($"End byte scope not found") : output;
-    }
-
-    private Type GetTypeFromString(string typeName)
-    {
-        if (!_typeCacheMap.TryGetValue(typeName, out var type))
-        {
-            type = Type.GetType(typeName);
-            if (type == null) throw new($"There is no such type named '{typeName}'");
-            // add to cache
-            _typeCacheMap.Add(typeName, type);
-        }
-
-        return type;
-    }
+    #endregion
 }

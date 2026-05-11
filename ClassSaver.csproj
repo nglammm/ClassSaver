@@ -6,10 +6,4 @@
         <Nullable>enable</Nullable>
     </PropertyGroup>
 
-    <ItemGroup>
-    <Content Include="Config/ClassSaverConfig.xml">
-        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    </ItemGroup>
-
 </Project>

@@ -1,4 +1,4 @@
-namespace ClassSaver;
+namespace ClassSaver.Structure;
 
 /// <summary>
 /// [TODO] cache section used to store cache.

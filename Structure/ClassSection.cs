@@ -1,4 +1,4 @@
-namespace ClassSaver;
+namespace ClassSaver.Structure;
 
 /// <summary>
 /// Used to represent the section for the serialization/parsing.
