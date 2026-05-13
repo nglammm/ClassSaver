@@ -1,9 +1,9 @@
 namespace ClassSaver.Structure;
 
 /// <summary>
-/// Used to represent the section for the serialization/parsing.
+/// Used to represent the section for the serialization/parsing file.
 /// </summary>
-public enum ClassSection
+public enum Sections
 {
     Header = 0,
     Cache = 1,

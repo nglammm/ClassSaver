@@ -1,7 +1,10 @@
 using System.Collections;
+using System.Reflection;
 using ClassSaver.Internal;
 using ClassSaver.Constants;
 using System.Runtime.CompilerServices;
+using ClassSaver.Parser;
+using ClassSaver.Parser.ParseTo;
 using ClassSaver.Structure;
 
 namespace ClassSaver;
@@ -12,18 +15,32 @@ namespace ClassSaver;
 /// </summary>
 public class ClassParser
 {
-    public HeaderSection HeaderSection => _headerSection;
-    public CacheSection CacheSection => _cacheSection;
+    /// <summary>
+    /// The header section of the data parsed.
+    /// </summary>
+    public HeaderSection? HeaderSection => _headerSection;
+    
+    /// <summary>
+    /// The cache section of the data parsed.
+    /// </summary>
+    public CacheSection? CacheSection => _cacheSection;
     
     private HeaderSection? _headerSection;
     private CacheSection? _cacheSection;
 
-    private object _refObject;
-    private Type _refObjectType;
+    private Sections _currentSection;
+    
+    private ParseMode _parseMode;
+    
+    private object? _refObject;
+    private bool _refHasParsedObj = false;
     
     private Dictionary<string, Type> _typeCacheMap = new();
     
     #region public parse functions
+    
+    #region normal parse
+    
     /// <summary>
     /// Parses the data stream and creates a <b>new</b> instance of the data on output.
     /// </summary>
@@ -32,52 +49,119 @@ public class ClassParser
     /// <returns>The object parsed and returned as new</returns>
     public T Parse<T>(Stream stream) where T : new()
     {
+        _parseMode = ParseMode.NewObject;
+        
         _refObject = null;
+        _refHasParsedObj = false;
         
         using var reader = new BinaryReader(stream);
         
-        _headerSection = ReadSection<HeaderSection>(ClassSection.Header, reader);
-        _cacheSection = ReadSection<CacheSection>(ClassSection.Cache, reader);
+        _currentSection = Sections.Header;
+        _headerSection = ReadSection<HeaderSection>(Sections.Header, reader);
         
-        return ReadSection<T>(ClassSection.Data, reader);
+        _currentSection = Sections.Cache;
+        _cacheSection = ReadSection<CacheSection>(Sections.Cache, reader);
+        
+        _currentSection = Sections.Data;
+        return ReadSection<T>(Sections.Data, reader);
     }
     
     /// <summary>
-    /// It is remarkably faster and safer if you run Parse with type reference overload
+    /// It is safer if you run Parse with type reference overload
     /// as the parser knows how to process the object parsed.
-    /// <para></para>
     /// <para>
-    /// Parses an input stream
+    /// Parses the data stream and creates a <b>new</b> instance of the data on output.
     /// </para>
     /// </summary>
     /// <param name="stream">The data stream</param>
     /// <returns>The object from the stream.</returns>
     public object Parse(Stream stream)
     {
+        _parseMode = ParseMode.NewObject;
+        
+        _refObject = null;
+        _refHasParsedObj = false;
+        
         using var reader = new BinaryReader(stream);
         
-        _headerSection = ReadSection<HeaderSection>(ClassSection.Header, reader);
-        _cacheSection = ReadSection<CacheSection>(ClassSection.Cache, reader);
+        _currentSection = Sections.Header;
+        _headerSection = ReadSection<HeaderSection>(Sections.Header, reader);
         
-        return ReadSection(ClassSection.Data, reader);
+        _currentSection = Sections.Cache;
+        _cacheSection = ReadSection<CacheSection>(Sections.Cache, reader);
+        
+        _currentSection = Sections.Data;
+        return ReadSection(Sections.Data, reader);
     }
     
+    #endregion
+    
+    #region parse to
+    
     /// <summary>
-    /// [TODO] Parses to an existing object.
+    /// Parses to an object instance instead of creating a new instance.
+    /// <para>
+    /// Recommended to use this function instead of the alternative overload because it is safer.
+    /// </para>
     /// </summary>
     /// <param name="obj">The object's reference</param>
     /// <param name="stream">The data stream</param>
-    public void ParseTo<T>(ref T obj, Stream stream) where T : new()
+    public void ParseTo<T>(T obj, Stream stream) where T : new()
     {
+        _parseMode = ParseMode.ToReference;
+        
         _refObject = obj;
-        _refObjectType = typeof(T);
-
-        throw new NotImplementedException();
+        _refHasParsedObj = false;
+        
+        using var reader = new BinaryReader(stream);
+        
+        _currentSection = Sections.Header;
+        _headerSection = ReadSection<HeaderSection>(Sections.Header, reader);
+        
+        _currentSection = Sections.Cache;
+        _cacheSection = ReadSection<CacheSection>(Sections.Cache, reader);
+        
+        _currentSection = Sections.Data;
+        ReadSection<T>(Sections.Data, reader);
     }
+    
+    /// <summary>
+    /// Parses to an object instance instead of creating a new instance.
+    /// <para>
+    /// Do note that this function is equivalent to the normal Parse() function
+    /// for structs because they are value types instead of reference types like
+    /// classes do.
+    /// </para>
+    /// </summary>
+    /// <param name="toObj">The object's reference</param>
+    /// <param name="stream">The data stream</param>
+    public void ParseTo(object toObj, Stream stream)
+    {
+        _parseMode = ParseMode.ToReference;
+        
+        _refObject = toObj;
+        _refHasParsedObj = false;
+        
+        using var reader = new BinaryReader(stream);
+        
+        _currentSection = Sections.Header;
+        _headerSection = ReadSection<HeaderSection>(Sections.Header, reader);
+        
+        _currentSection = Sections.Cache;
+        _cacheSection = ReadSection<CacheSection>(Sections.Cache, reader);
+        
+        _currentSection = Sections.Data;
+        ReadSection(Sections.Data, reader);
+    }
+    
+    #endregion
+    
     #endregion
     
     #region Read Section functions
-    private T ReadSection<T>(ClassSection section, BinaryReader reader) where T : new()
+    
+    #region read section
+    private T ReadSection<T>(Sections section, BinaryReader reader) where T : new()
     {
         var startSectionByte = reader.ReadByte();
         if ((byte)Markers.StartSection != startSectionByte)
@@ -90,20 +174,20 @@ public class ClassParser
         
         switch (section)
         {
-            case ClassSection.Header:
+            case Sections.Header:
                 var header = ReadSectionHeader(reader);
                 return !IsByte(reader, (byte)Markers.EndScope, false) ? throw new("The expected end byte does not match") : Unsafe.As<HeaderSection, T>(ref header);
-            case ClassSection.Cache:
+            case Sections.Cache:
                 var cache = ReadSectionCache(reader);
                 return !IsByte(reader, (byte)Markers.EndScope, false) ? throw new("The expected end byte does not match") : Unsafe.As<CacheSection, T>(ref cache);
-            case ClassSection.Data:
+            case Sections.Data:
                 return ReadSectionData<T>(reader);
             default:
                 throw new Exception($"Unimplemented section type '{section}'");
         }
     }
 
-    private object ReadSection(ClassSection section, BinaryReader reader)
+    private object ReadSection(Sections section, BinaryReader reader)
     {
         var startSectionByte = reader.ReadByte();
         if ((byte)Markers.StartSection != startSectionByte)
@@ -116,27 +200,37 @@ public class ClassParser
         
         switch (section)
         {
-            case ClassSection.Header:
+            case Sections.Header:
                 var header = ReadSectionHeader(reader);
                 return !IsByte(reader, (byte)Markers.EndScope, false)
                     ? throw new("The expected end byte does not match")
                     : header;
-            case ClassSection.Cache:
+            case Sections.Cache:
                 var cache = ReadSectionCache(reader);
                 return !IsByte(reader, (byte)Markers.EndScope, false)
                     ? throw new("The expected end byte does not match")
                     : cache;
-            case ClassSection.Data:
+            case Sections.Data:
                 return ReadSectionData(reader);
             default:
                 throw new Exception($"Unimplemented section type '{section}'");
         }
     }
     
+    #endregion
+    
+    #region understanding each section
+    
     private HeaderSection ReadSectionHeader(BinaryReader reader) => Parse<HeaderSection>(reader);
     private CacheSection ReadSectionCache(BinaryReader reader) => Parse<CacheSection>(reader);
     private T ReadSectionData<T>(BinaryReader reader) where T : new() => Parse<T>(reader);
-    private object ReadSectionData(BinaryReader reader) => Parse(reader);
+
+    private object ReadSectionData(BinaryReader reader)
+    {
+        return Parse(reader);
+    }
+    
+    #endregion
     
     #endregion
 
@@ -166,7 +260,8 @@ public class ClassParser
     
     #region No cache functions
     
-    #region parse functions
+    #region general functions
+    
     /// <summary>
     /// Starts parsing at the start of any start byte.
     /// </summary>
@@ -179,10 +274,17 @@ public class ClassParser
     
     private object? ParseNoCache(BinaryReader reader, out string varName)
     {
-        // variables data
         var varMarkerByte = reader.ReadByte();
         varName = reader.ReadString();
         object? varItem;
+
+        object? refObj = null;
+        
+        if (_currentSection == Sections.Data && !_refHasParsedObj)
+        {
+            refObj = _refObject;
+            _refHasParsedObj = true;
+        }
 
         switch (varMarkerByte)
         {
@@ -193,7 +295,7 @@ public class ClassParser
                 varItem = ReadCollectionNoCache(reader);
                 break;
             case (byte)Markers.StartClass:
-                varItem = ReadClassNoCache(GetTypeFromString(reader.ReadString()), reader);
+                varItem = ReadClassNoCache(GetTypeFromString(reader.ReadString()), reader, refObj);
                 break;
             case (byte)Markers.StartSerializable:
                 varItem = ReadISerializableNoCache(reader);
@@ -208,22 +310,35 @@ public class ClassParser
     #endregion
     
     #region read class
-    private object? ReadClassNoCache(Type tType, BinaryReader reader)
+    private object? ReadClassNoCache(Type tType, BinaryReader reader, object? objInstance = null)
     {
         // preload all variables
         var fieldsMap = tType.GetFields(Manager.BindingFlagsAll).ToDictionary(field => field.Name);
         var propertiesMap = tType.GetProperties(Manager.BindingFlagsAll).ToDictionary(p => p.Name);
+        var methodsMap = tType.GetMethods(Manager.BindingFlagsAll).ToDictionary(method => method.Name);
         
         // preparing the outputs
-        var outputClass = Activator.CreateInstance(tType);
+        object? outputClass;
+
+        if (objInstance != null)
+        {
+            if (objInstance.GetType() != tType)
+                throw new(
+                    $"Object instance param type of '{objInstance.GetType().Name}' passed in does not match passed in type '{tType.Name}'");
+            
+            outputClass = objInstance;
+        }
+        else outputClass = Activator.CreateInstance(tType);
+
+        if (outputClass == null) throw new($"No such object '{tType.Name}'.");
 
         while (!IsByte(reader, (byte)Markers.EndScope))
         {
             var varData = ParseNoCache(reader, out var varName);
             
             // set to variable
-            if (fieldsMap.TryGetValue(varName, out var field)) field.SetValue(outputClass, varData);
-            else if (propertiesMap.TryGetValue(varName, out var property)) property.SetValue(outputClass, varData);
+            if (fieldsMap.TryGetValue(varName, out var field)) ProcessField(outputClass, methodsMap, field, varData);
+            else if (propertiesMap.TryGetValue(varName, out var property)) ProcessProperty(outputClass, methodsMap, property, varData);
             else throw new($"No such variable '{varName}' found in type '{tType.Name}'.");
         }
         
@@ -442,6 +557,49 @@ public class ClassParser
         if (fixStreamPos) reader.BaseStream.Position -= 1;
         
         return readByte == expectedByte;
+    }
+    
+    
+    private void ProcessField(object classObj, Dictionary<string, MethodInfo> methodMap, FieldInfo field, object fieldData)
+    {
+        var doNotOverrideAttr = field.GetCustomAttribute<DoNotOverride>();
+        if (doNotOverrideAttr != null)
+        {
+            var checkFunc = doNotOverrideAttr.FuncCheckName;
+            if (!methodMap.TryGetValue(checkFunc, out var method))
+            {
+                Console.Out.WriteLine($"Field {field.Name}'s attribute has an unknown method. Setting value anyway...");
+                field.SetValue(classObj, fieldData);
+                return;
+            }
+            
+            var res = (bool)method.Invoke(classObj, [fieldData]);
+
+            if (!res) return;
+        }
+        
+        field.SetValue(classObj, fieldData);
+    }
+    
+    private void ProcessProperty(object classObj, Dictionary<string, MethodInfo> methodMap, PropertyInfo property, object propertyData)
+    {
+        var doNotOverrideAttr = property.GetCustomAttribute<DoNotOverride>();
+        if (doNotOverrideAttr != null)
+        {
+            var checkFunc = doNotOverrideAttr.FuncCheckName;
+            if (!methodMap.TryGetValue(checkFunc, out var method))
+            {
+                if (string.IsNullOrEmpty(checkFunc)) return;
+                Console.Out.WriteLine($"Property {property.Name}'s attribute has an unknown method. Setting value anyway...");
+                return;
+            }
+            
+            var res = (bool)method.Invoke(classObj, [propertyData]);
+
+            if (!res) return;
+        }
+        
+        property.SetValue(classObj, propertyData);
     }
     #endregion
 }

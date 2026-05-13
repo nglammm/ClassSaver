@@ -24,6 +24,10 @@ static class ClassSaverTest
     {
         public abstract override string ToString();
         public abstract void RandomData();
+        public bool IsCorrect(object toCheck)
+        {
+            return false;
+        }
     }
     
     private class Vector3 : TestClass
@@ -72,7 +76,7 @@ static class ClassSaverTest
 
             foreach (var kvp in classes)
             {
-                partTwo += $"{kvp}";
+                partTwo += $"{kvp}"; // dict does not remain ordering though.
             }
             
             return partOne + partTwo;
@@ -91,43 +95,77 @@ static class ClassSaverTest
 
             for (int i = 0; i < dictLength; i++)
             {
-                classes.Add(RandomString.GetRandomString(dictLength), rnd.Next(1, 100));
+                var toAdd = (RandomString.GetRandomString(dictLength), rnd.Next(1, 20));
+                while (classes.ContainsKey(toAdd.Item1))
+                {
+                    toAdd = (RandomString.GetRandomString(dictLength), rnd.Next(1, 20));
+                }
+                
+                classes.Add(toAdd.Item1, toAdd.Item2);
             }
         }
     }
-    
-    
-    private static List<Type> testableTypes = new()
+
+    private struct Vector2
     {
+        public int x;
+        public int y;
+        
+        public override string ToString()
+        {
+            return $"{x}, {y}";
+        }
+    }
+
+
+    private static readonly Type[] testableTypes =
+    [
         typeof(Vector3),
         typeof(Classroom),
-    };
+        typeof(Vector2)
+    ];
 
-    private static string fileExtension = "test";
+    private const string fileExtension = "test";
+    private static Random _random;
 
-    private static bool Test(Random random, int testNum, ClassSerializer serializer, ClassParser parser)
+    private static bool Test(int testNum, ClassSerializer serializer, ClassParser parser)
     {
-        int typeIndex = random.Next(testableTypes.Count);
+        int typeIndex = _random.Next(testableTypes.Length);
         Type currentType = testableTypes[typeIndex];
+        
+        if (currentType.IsClass) return TestClassType(currentType, testNum, serializer, parser);
+        
+        return TestStructType(currentType, testNum, serializer, parser);
+    }
     
+    private static bool TestClassType(Type currentType, int testNum, ClassSerializer serializer, ClassParser parser)
+    {
         var objectA = Activator.CreateInstance(currentType) as TestClass;
         object objectB;
         objectA?.RandomData();
     
         string fileName = $"{currentType.Name}_{testNum}.{fileExtension}";
-
         
         using (var fileStream = new FileStream(fileName, FileMode.Create, FileAccess.Write))
         {
             serializer.Serialize(objectA, fileStream);
         }
         
+        // 50 50 chance it creates new object or reference.
+        int chance = _random.Next(0, 2);
         using (var readStream = new FileStream(fileName, FileMode.Open, FileAccess.Read))
+
+        if (chance == 0)
         {
             objectB = parser.Parse(readStream);
         }
+        else
+        {
+            objectB = Activator.CreateInstance(currentType);
+            parser.ParseTo(objectB, readStream);
+        }
 
-        if (objectA?.ToString() == objectB?.ToString())
+        if (objectA.ToString() == objectB.ToString())
         {
             Console.WriteLine($"Test {testNum} passed.");
         
@@ -144,6 +182,40 @@ static class ClassSaverTest
         return false;
     }
 
+    private static bool TestStructType(Type currentType, int testNum, ClassSerializer serializer, ClassParser parser)
+    {
+        var objectA = Activator.CreateInstance(currentType);
+        object? objectB;
+        
+        string fileName = $"{currentType.Name}_{testNum}.{fileExtension}";
+        
+        using (var fileStream = new FileStream(fileName, FileMode.Create, FileAccess.Write))
+        {
+            serializer.Serialize(objectA, fileStream);
+        }
+        
+        using (var readStream = new FileStream(fileName, FileMode.Open, FileAccess.Read))
+        {
+            objectB = parser.Parse(readStream);
+        }
+
+        if (objectA.ToString() == objectB.ToString())
+        {
+            Console.WriteLine($"Test {testNum} passed.");
+        
+            // Delete the file only if the test passes
+            if (File.Exists(fileName))
+            {
+                File.Delete(fileName);
+            }
+            return true;
+        }
+        
+        Console.WriteLine($"Test {testNum} failed.");
+        Console.WriteLine($"{objectA} vs {objectB}");
+        return false;
+    }
+
     public static void Main()
     {
         Console.Out.Write("Enter the number of tests to run: ");
@@ -151,11 +223,11 @@ static class ClassSaverTest
         
         var serializer = new ClassSerializer();
         var parser = new ClassParser();
-        var random = new Random();
+        _random = new Random();
 
         for (int testNumber = 1; testNumber <= numOfTests; testNumber++)
         {
-            bool res = Test(random, testNumber, serializer, parser);
+            var res = Test(testNumber, serializer, parser);
             if (!res) throw new("Test failed.");
         }
     }

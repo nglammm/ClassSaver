@@ -1,7 +1,8 @@
-namespace ClassSaver.ParseTo;
+namespace ClassSaver.Parser.ParseTo;
 
 /// <summary>
-/// Attribute used to not override the value if fits a certain criteria.
+/// Attribute used to not override a variable when using the ParseTo() function on ClassParser
+/// if fits a certain criteria (optional).
 /// </summary>
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, AllowMultiple = false, Inherited = false)]
 public class DoNotOverride : Attribute

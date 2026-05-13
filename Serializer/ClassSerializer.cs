@@ -31,15 +31,21 @@ public class ClassSerializer
         using var writer = new BinaryWriter(dataStream);
         
         // write the first header
-        WriteSection(ClassSection.Header, writer);
+        WriteSection(Sections.Header, writer);
         
         // write the cache section
-        WriteSection(ClassSection.Cache, writer);
+        WriteSection(Sections.Cache, writer);
         
         // write the third data section
-        WriteSection(ClassSection.Data, writer);
+        WriteSection(Sections.Data, writer);
     }
     
+    /// <summary>
+    /// Serializes the desired object to the data stream (without specifying type)
+    /// </summary>
+    /// <param name="desiredObj">The desired object to parse</param>
+    /// <param name="dataStream">The data stream to work with</param>
+    /// <param name="cacheMode">The cache mode to serialize with</param>
     public void Serialize(object desiredObj, Stream dataStream, CacheMode cacheMode = CacheMode.None)
     {
         _cacheMode = cacheMode;
@@ -49,13 +55,13 @@ public class ClassSerializer
         using var writer = new BinaryWriter(dataStream);
         
         // write the first header
-        WriteSection(ClassSection.Header, writer);
+        WriteSection(Sections.Header, writer);
         
         // write the cache section
-        WriteSection(ClassSection.Cache, writer);
+        WriteSection(Sections.Cache, writer);
         
         // write the third data section
-        WriteSection(ClassSection.Data, writer);
+        WriteSection(Sections.Data, writer);
     }
     #endregion
     
@@ -67,7 +73,7 @@ public class ClassSerializer
     /// <param name="section">The section to write</param>
     /// <param name="writer">The binary writer param</param>
     /// <exception cref="ArgumentOutOfRangeException">Called if there is no such ClassSection or it is not implemented.</exception>
-    private void WriteSection(ClassSection section, BinaryWriter writer)
+    private void WriteSection(Sections section, BinaryWriter writer)
     {
         // already written the byte code here.
         writer.Write((byte)Markers.StartSection);
@@ -75,13 +81,13 @@ public class ClassSerializer
 
         switch (section)
         {
-            case ClassSection.Header:
+            case Sections.Header:
                 WriteSectionHeader(writer);
                 break;
-            case ClassSection.Cache:
+            case Sections.Cache:
                 WriteSectionCache(writer);
                 break;
-            case ClassSection.Data:
+            case Sections.Data:
                 WriteSectionData(writer);
                 break;
             default:
