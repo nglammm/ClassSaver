@@ -5,6 +5,6 @@ namespace ClassSaver.Constants;
 /// </summary>
 public enum CollectionInterfaces
 {
-    IList = 0x30,
-    IDictionary = 0x31
+    IList = 3,
+    IDictionary = 4
 }

@@ -12,32 +12,32 @@ public enum PrimitiveDatatypes
     /// -----------------
     
     // 1 Byte (8-bit)
-    Boolean = 10,
-    Byte = 11,
-    SByte = 12,
+    Boolean = 16,
+    Byte = 17,
+    SByte = 18,
 
     // 2 Bytes (16-bit)
-    Char = 13,
-    Int16 = 14,
-    UInt16 = 15,
+    Char = 19,
+    Int16 = 20,
+    UInt16 = 21,
 
     // 4 Bytes (32-bit)
-    Int32 = 16,
-    UInt32 = 17,
-    Single = 18, // float
+    Int32 = 22,
+    UInt32 = 23,
+    Single = 24, // float
 
     // 8 Bytes (64-bit)
-    Int64 = 19,
-    UInt64 = 20,
-    Double = 21,
+    Int64 = 25,
+    UInt64 = 26,
+    Double = 27,
 
     // 16 Bytes (128-bit)
-    Decimal = 22,
+    Decimal = 28,
 
     // Reference Types
-    String = 23,
-    Null = 24,
+    String = 29,
+    Null = 30,
     
     // Custom types
-    ISerializable = 25
+    ISerializable = 31
 }

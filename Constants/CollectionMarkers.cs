@@ -5,8 +5,8 @@ namespace ClassSaver.Constants;
 /// </summary>
 public enum CollectionMarkers
 {
-    IDictionaryKeyStart = 0x40,
-    IDictionaryValueStart = 0x41,
-    IListElementStart = 0x42,
+    IDictionaryKeyStart = 5,
+    IDictionaryValueStart = 6,
+    IListElementStart = 7,
     // end scope already exists in Markers.EndScope
 }

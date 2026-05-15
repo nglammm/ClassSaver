@@ -117,12 +117,55 @@ static class ClassSaverTest
         }
     }
 
+    private class SelfRefTest : TestClass
+    {
+        public SelfRefTest _referenceSelf;
+
+        public int foo = 0;
+        public string boo = "8fj2jf3f2";
+
+        public override void RandomData()
+        {
+            Random rnd = new Random();
+
+            foo = rnd.Next(1, 10000);
+            boo = RandomString.GetRandomString(10);
+
+            _referenceSelf = this;
+        }
+
+        public override string ToString()
+        {
+            return $"{_referenceSelf.foo} , {_referenceSelf.boo}, {foo}, {boo}";
+        }
+    }
+
+
+    private class NullTest : TestClass
+    {
+        public Vector2? vector2 = null;
+
+        public override void RandomData()
+        {
+            
+        }
+
+        public override string ToString()
+        {
+            if (vector2 == null) return "pass";
+
+            return "fail";
+        }
+    }
+
 
     private static readonly Type[] testableTypes =
     [
         typeof(Vector3),
         typeof(Classroom),
-        typeof(Vector2)
+        typeof(Vector2),
+        typeof(SelfRefTest),
+        typeof(NullTest)
     ];
 
     private const string fileExtension = "test";

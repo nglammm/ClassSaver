@@ -5,10 +5,12 @@ namespace ClassSaver.Constants;
 /// </summary>
 public enum Markers
 {
-    StartVariable = 1, // for fields & properties
-    StartCollection = 2, // for ICollection
-    StartSerializable = 3, // for ISerializable
-    StartSection = 4, // for ClassSection
-    StartClass = 5, // for any class/struct
-    EndScope = 6
+    StartPrimitive = 8, // for fields & properties
+    StartCollection = 9, // for ICollection
+    StartSerializable = 10, // for ISerializable
+    StartSection = 11, // for ClassSection
+    StartClass = 12, // for any class/struct
+    StartReference = 13, // for start of reference types
+    ReferenceTo = 14, // to reference to a reference type
+    EndScope = 15
 }

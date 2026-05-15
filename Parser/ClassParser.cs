@@ -28,14 +28,46 @@ public class ClassParser
     private HeaderSection? _headerSection;
     private CacheSection? _cacheSection;
 
-    private Sections _currentSection;
+    private SectionNumbers _currentSectionNumber;
     
     private ParseMode _parseMode;
     
     private object? _refObject;
-    private bool _refHasParsedObj = false;
+    private bool _refHasParsedObj;
     
     private Dictionary<string, Type> _typeCacheMap = new();
+    
+    private Dictionary<int, object> _referenceMap = new();
+    private Dictionary<int, Queue<Action<object>>> _waitingToBeReferenced = new();
+    
+    /// <summary>
+    /// Path to the parent.
+    /// </summary>
+    public class ParentLocation
+    {
+        public object ParentObject;
+        private FieldInfo? _fieldInfo;
+        private PropertyInfo? _propertyInfo;
+
+        public ParentLocation(object parentObj, FieldInfo field)
+        {
+            ParentObject = parentObj;
+            _fieldInfo = field;
+        }
+
+        public ParentLocation(object parentObj, PropertyInfo property)
+        {
+            ParentObject = parentObj;
+            _propertyInfo = property;
+        }
+
+        public void SetToParent(object value)
+        {
+            if (_fieldInfo != null) _fieldInfo.SetValue(ParentObject, value);
+            else if (_propertyInfo != null) _propertyInfo.SetValue(ParentObject, value);
+            else throw new($"No such field info or property info assigned.");
+        }
+    }
     
     #region public parse functions
     
@@ -54,16 +86,19 @@ public class ClassParser
         _refObject = null;
         _refHasParsedObj = false;
         
+        _referenceMap.Clear();
+        _waitingToBeReferenced.Clear();
+        
         using var reader = new BinaryReader(stream);
         
-        _currentSection = Sections.Header;
-        _headerSection = ReadSection<HeaderSection>(Sections.Header, reader);
+        _currentSectionNumber = SectionNumbers.Header;
+        _headerSection = ReadSection<HeaderSection>(SectionNumbers.Header, reader);
         
-        _currentSection = Sections.Cache;
-        _cacheSection = ReadSection<CacheSection>(Sections.Cache, reader);
+        _currentSectionNumber = SectionNumbers.Cache;
+        _cacheSection = ReadSection<CacheSection>(SectionNumbers.Cache, reader);
         
-        _currentSection = Sections.Data;
-        return ReadSection<T>(Sections.Data, reader);
+        _currentSectionNumber = SectionNumbers.Data;
+        return ReadSection<T>(SectionNumbers.Data, reader);
     }
     
     /// <summary>
@@ -82,16 +117,19 @@ public class ClassParser
         _refObject = null;
         _refHasParsedObj = false;
         
+        _referenceMap.Clear();
+        _waitingToBeReferenced.Clear();
+        
         using var reader = new BinaryReader(stream);
         
-        _currentSection = Sections.Header;
-        _headerSection = ReadSection<HeaderSection>(Sections.Header, reader);
+        _currentSectionNumber = SectionNumbers.Header;
+        _headerSection = ReadSection<HeaderSection>(SectionNumbers.Header, reader);
         
-        _currentSection = Sections.Cache;
-        _cacheSection = ReadSection<CacheSection>(Sections.Cache, reader);
+        _currentSectionNumber = SectionNumbers.Cache;
+        _cacheSection = ReadSection<CacheSection>(SectionNumbers.Cache, reader);
         
-        _currentSection = Sections.Data;
-        return ReadSection(Sections.Data, reader);
+        _currentSectionNumber = SectionNumbers.Data;
+        return ReadSection(SectionNumbers.Data, reader);
     }
     
     #endregion
@@ -113,16 +151,19 @@ public class ClassParser
         _refObject = obj;
         _refHasParsedObj = false;
         
+        _referenceMap.Clear();
+        _waitingToBeReferenced.Clear();
+        
         using var reader = new BinaryReader(stream);
         
-        _currentSection = Sections.Header;
-        _headerSection = ReadSection<HeaderSection>(Sections.Header, reader);
+        _currentSectionNumber = SectionNumbers.Header;
+        _headerSection = ReadSection<HeaderSection>(SectionNumbers.Header, reader);
         
-        _currentSection = Sections.Cache;
-        _cacheSection = ReadSection<CacheSection>(Sections.Cache, reader);
+        _currentSectionNumber = SectionNumbers.Cache;
+        _cacheSection = ReadSection<CacheSection>(SectionNumbers.Cache, reader);
         
-        _currentSection = Sections.Data;
-        ReadSection<T>(Sections.Data, reader);
+        _currentSectionNumber = SectionNumbers.Data;
+        ReadSection<T>(SectionNumbers.Data, reader);
     }
     
     /// <summary>
@@ -142,16 +183,19 @@ public class ClassParser
         _refObject = toObj;
         _refHasParsedObj = false;
         
+        _referenceMap.Clear();
+        _waitingToBeReferenced.Clear();
+        
         using var reader = new BinaryReader(stream);
         
-        _currentSection = Sections.Header;
-        _headerSection = ReadSection<HeaderSection>(Sections.Header, reader);
+        _currentSectionNumber = SectionNumbers.Header;
+        _headerSection = ReadSection<HeaderSection>(SectionNumbers.Header, reader);
         
-        _currentSection = Sections.Cache;
-        _cacheSection = ReadSection<CacheSection>(Sections.Cache, reader);
+        _currentSectionNumber = SectionNumbers.Cache;
+        _cacheSection = ReadSection<CacheSection>(SectionNumbers.Cache, reader);
         
-        _currentSection = Sections.Data;
-        ReadSection(Sections.Data, reader);
+        _currentSectionNumber = SectionNumbers.Data;
+        ReadSection(SectionNumbers.Data, reader);
     }
     
     #endregion
@@ -161,7 +205,7 @@ public class ClassParser
     #region Read Section functions
     
     #region read section
-    private T ReadSection<T>(Sections section, BinaryReader reader) where T : new()
+    private T ReadSection<T>(SectionNumbers sectionNumber, BinaryReader reader) where T : new()
     {
         var startSectionByte = reader.ReadByte();
         if ((byte)Markers.StartSection != startSectionByte)
@@ -170,24 +214,24 @@ public class ClassParser
         }
 
         var sectionCode = reader.ReadInt32();
-        if (sectionCode != (int)section) throw new($"Expected section code '{sectionCode}', got '{section}'.");
+        if (sectionCode != (int)sectionNumber) throw new($"Expected section code '{sectionCode}', got '{sectionNumber}'.");
         
-        switch (section)
+        switch (sectionNumber)
         {
-            case Sections.Header:
+            case SectionNumbers.Header:
                 var header = ReadSectionHeader(reader);
                 return !IsByte(reader, (byte)Markers.EndScope, false) ? throw new("The expected end byte does not match") : Unsafe.As<HeaderSection, T>(ref header);
-            case Sections.Cache:
+            case SectionNumbers.Cache:
                 var cache = ReadSectionCache(reader);
                 return !IsByte(reader, (byte)Markers.EndScope, false) ? throw new("The expected end byte does not match") : Unsafe.As<CacheSection, T>(ref cache);
-            case Sections.Data:
+            case SectionNumbers.Data:
                 return ReadSectionData<T>(reader);
             default:
-                throw new Exception($"Unimplemented section type '{section}'");
+                throw new Exception($"Unimplemented section type '{sectionNumber}'");
         }
     }
 
-    private object ReadSection(Sections section, BinaryReader reader)
+    private object ReadSection(SectionNumbers sectionNumber, BinaryReader reader)
     {
         var startSectionByte = reader.ReadByte();
         if ((byte)Markers.StartSection != startSectionByte)
@@ -196,24 +240,24 @@ public class ClassParser
         }
 
         var sectionCode = reader.ReadInt32();
-        if (sectionCode != (int)section) throw new($"Expected section code '{sectionCode}', got '{section}'.");
+        if (sectionCode != (int)sectionNumber) throw new($"Expected section code '{sectionCode}', got '{sectionNumber}'.");
         
-        switch (section)
+        switch (sectionNumber)
         {
-            case Sections.Header:
+            case SectionNumbers.Header:
                 var header = ReadSectionHeader(reader);
                 return !IsByte(reader, (byte)Markers.EndScope, false)
                     ? throw new("The expected end byte does not match")
                     : header;
-            case Sections.Cache:
+            case SectionNumbers.Cache:
                 var cache = ReadSectionCache(reader);
                 return !IsByte(reader, (byte)Markers.EndScope, false)
                     ? throw new("The expected end byte does not match")
                     : cache;
-            case Sections.Data:
+            case SectionNumbers.Data:
                 return ReadSectionData(reader);
             default:
-                throw new Exception($"Unimplemented section type '{section}'");
+                throw new Exception($"Unimplemented section type '{sectionNumber}'");
         }
     }
     
@@ -262,25 +306,14 @@ public class ClassParser
     
     #region general functions
     
-    /// <summary>
-    /// Starts parsing at the start of any start byte.
-    /// </summary>
-    /// <param name="reader">Binary Reader instance</param>
-    /// <returns>Object after parse</returns>
-    private object? ParseNoCache(BinaryReader reader)
-    {
-        return ParseNoCache(reader, out _);
-    }
-    
-    private object? ParseNoCache(BinaryReader reader, out string varName)
+    private object? ParseNoCache(BinaryReader reader, ParentLocation? parent = null)
     {
         var varMarkerByte = reader.ReadByte();
-        varName = reader.ReadString();
+        
         object? varItem;
-
         object? refObj = null;
         
-        if (_currentSection == Sections.Data && !_refHasParsedObj)
+        if (_currentSectionNumber == SectionNumbers.Data && !_refHasParsedObj)
         {
             refObj = _refObject;
             _refHasParsedObj = true;
@@ -288,14 +321,14 @@ public class ClassParser
 
         switch (varMarkerByte)
         {
-            case (byte)Markers.StartVariable:
+            case (byte)Markers.StartPrimitive:
                 varItem = ReadPrimitiveNoCache(reader);
                 break;
             case (byte)Markers.StartCollection:
                 varItem = ReadCollectionNoCache(reader);
                 break;
             case (byte)Markers.StartClass:
-                varItem = ReadClassNoCache(GetTypeFromString(reader.ReadString()), reader, refObj);
+                varItem = ReadClassNoCache(reader, refObj, parent);
                 break;
             case (byte)Markers.StartSerializable:
                 varItem = ReadISerializableNoCache(reader);
@@ -307,45 +340,124 @@ public class ClassParser
         // last byte is handled in those functions.
         return varItem;
     }
+    
     #endregion
     
     #region read class
-    private object? ReadClassNoCache(Type tType, BinaryReader reader, object? objInstance = null)
+    private object? ReadClassNoCache(BinaryReader reader, object? objInstance = null, ParentLocation? parent = null)
     {
-        // preload all variables
-        var fieldsMap = tType.GetFields(Manager.BindingFlagsAll).ToDictionary(field => field.Name);
-        var propertiesMap = tType.GetProperties(Manager.BindingFlagsAll).ToDictionary(p => p.Name);
-        var methodsMap = tType.GetMethods(Manager.BindingFlagsAll).ToDictionary(method => method.Name);
-        
-        // preparing the outputs
         object? outputClass;
 
+        if (IsByte(reader, (byte)Markers.ReferenceTo, false))
+        {
+            
+            var refCode = reader.ReadInt32();
+            
+            // if this reference code does not exist in the reference map yet,
+            // we put it in the waiting queue until the reference code existed
+            // which will clear the queue
+            if (!_referenceMap.TryGetValue(refCode, out outputClass))
+            {
+                if (!_waitingToBeReferenced.ContainsKey(refCode)) _waitingToBeReferenced[refCode] = new();
+                if (parent != null) _waitingToBeReferenced[refCode].Enqueue(parent.SetToParent);
+                else throw new("Expected parent location yet no parent location found.");
+            }
+
+            return !IsByte(reader, (byte)Markers.EndScope, false) ? throw new($"Expected end byte.'") : outputClass;
+        }
+
+        reader.BaseStream.Position -= 1;
+        
+        if (!IsByte(reader, (byte)Markers.StartReference, false))
+        {
+            throw new($"Expected either start reference or reference to bytes, got none.");
+        }
+        
+        var desiredRefCode = reader.ReadInt32();
+        var type = GetTypeFromString(reader.ReadString());
+        
         if (objInstance != null)
         {
-            if (objInstance.GetType() != tType)
+            if (objInstance.GetType() != type)
                 throw new(
-                    $"Object instance param type of '{objInstance.GetType().Name}' passed in does not match passed in type '{tType.Name}'");
+                    $"Object instance param type of '{objInstance.GetType().Name}' passed in does not match passed in type '{type.Name}'"
+                    );
             
             outputClass = objInstance;
         }
-        else outputClass = Activator.CreateInstance(tType);
-
-        if (outputClass == null) throw new($"No such object '{tType.Name}'.");
-
+        else outputClass = Activator.CreateInstance(type);
+            
+        // preload all variables
+        var fieldsMap = type.GetFields(Manager.BindingFlagsAll).ToDictionary(field => field.Name);
+        var propertiesMap = type.GetProperties(Manager.BindingFlagsAll).ToDictionary(p => p.Name);
+        var methodsMap = type.GetMethods(Manager.BindingFlagsAll).ToDictionary(method => method.Name);
+        
         while (!IsByte(reader, (byte)Markers.EndScope))
         {
-            var varData = ParseNoCache(reader, out var varName);
-            
-            // set to variable
-            if (fieldsMap.TryGetValue(varName, out var field)) ProcessField(outputClass, methodsMap, field, varData);
-            else if (propertiesMap.TryGetValue(varName, out var property)) ProcessProperty(outputClass, methodsMap, property, varData);
-            else throw new($"No such variable '{varName}' found in type '{tType.Name}'.");
+            ProcessVariableNoCache(reader, outputClass, fieldsMap, propertiesMap, methodsMap);
         }
         
         reader.BaseStream.Position += 1; // it is end scope byte here so pass it.
         
+        // add to reference map
+        _referenceMap.Add(desiredRefCode, outputClass);
+        
+        // and clear all the queue (if we have to)
+        if (!_waitingToBeReferenced.TryGetValue(desiredRefCode, out var value)) return outputClass;
+        
+        while (value.Count > 0)
+        {
+            value.Dequeue().Invoke(outputClass);
+        }
+        
+        _waitingToBeReferenced.Remove(desiredRefCode);
         return outputClass;
     }
+
+    private (string, VariableTypes) GetVariableInfoNoCache(BinaryReader reader, bool fixStreamPos = true)
+    {
+        if (!IsByte(reader, (byte)ClassMarkers.StartVariable, false))
+            throw new($"Expected start variable byte of '{ClassMarkers.StartVariable}' but didnt match.");
+
+        var varTypeByte = reader.ReadByte();
+        var varType = (VariableTypes)varTypeByte;
+        
+        var varName = reader.ReadString();
+
+        if (fixStreamPos) reader.BaseStream.Position -= 3;
+
+        return (varName, varType);
+    }
+
+    private void ProcessVariableNoCache(BinaryReader reader, object baseObj, Dictionary<string, FieldInfo> fieldMap, Dictionary<string, PropertyInfo> propertyMap, Dictionary<string, MethodInfo> methodMap)
+    {
+        var (varName, varType) = GetVariableInfoNoCache(reader, false);
+        
+        if (!IsByte(reader, (byte)ClassMarkers.StartVariableData, false))
+            throw new($"Expected start variable data byte of '{ClassMarkers.StartVariableData}'.");
+        
+        // create new parent location
+        ParentLocation? parentLoc;
+        
+        switch (varType)
+        {
+            case VariableTypes.Field:
+                if (!fieldMap.TryGetValue(varName, out var field)) throw new($"No such field '{varName}' found.");
+                parentLoc = new ParentLocation(baseObj, field);
+                ProcessField(baseObj, methodMap, field, ParseNoCache(reader, parentLoc));
+                break;
+            case VariableTypes.Property:
+                if (!propertyMap.TryGetValue(varName, out var property)) throw new($"No such property '{varName}' found.");
+                parentLoc = new ParentLocation(baseObj, property);
+                ProcessProperty(baseObj, methodMap, property, ParseNoCache(reader, parentLoc));
+                break;
+            default:
+                throw new($"Unsupported variable type '{varType}'.");
+        }
+        
+        if (!IsByte(reader, (byte)Markers.EndScope, false)) throw new($"Expected end byte value of '{Markers.EndScope}'.");
+    }
+    
     #endregion
 
     #region read collection
@@ -568,7 +680,7 @@ public class ClassParser
             var checkFunc = doNotOverrideAttr.FuncCheckName;
             if (!methodMap.TryGetValue(checkFunc, out var method))
             {
-                Console.Out.WriteLine($"Field {field.Name}'s attribute has an unknown method. Setting value anyway...");
+                Console.WriteLine($"Field {field.Name}'s attribute has an unknown method. Setting value anyway...");
                 field.SetValue(classObj, fieldData);
                 return;
             }
@@ -590,7 +702,7 @@ public class ClassParser
             if (!methodMap.TryGetValue(checkFunc, out var method))
             {
                 if (string.IsNullOrEmpty(checkFunc)) return;
-                Console.Out.WriteLine($"Property {property.Name}'s attribute has an unknown method. Setting value anyway...");
+                Console.WriteLine($"Property {property.Name}'s attribute has an unknown method. Setting value anyway...");
                 return;
             }
             
