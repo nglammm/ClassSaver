@@ -6,4 +6,4 @@
 Saves/Loads your c# class data with data stream
 
 ## to dos
-- *future* - implement cache mode "keyword"
+- document the whole project

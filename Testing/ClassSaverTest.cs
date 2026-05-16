@@ -1,4 +1,5 @@
 using System;
+using ClassSaver.Structure;
 
 namespace ClassSaver.Testing;
 
@@ -234,7 +235,7 @@ static class ClassSaverTest
         
         using (var fileStream = new FileStream(fileName, FileMode.Create, FileAccess.Write))
         {
-            serializer.Serialize(objectA, fileStream);
+            serializer.Serialize(objectA, fileStream, CacheMode.Keyword);
         }
         
         using (var readStream = new FileStream(fileName, FileMode.Open, FileAccess.Read))
